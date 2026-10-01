@@ -1,0 +1,5 @@
+- Identify rollback points before starting the migration.
+- Ensure backups or snapshots are available.
+- Test the rollback procedure in a non-production environment.
+- Document the exact steps to revert the migration.
+- Verify data integrity after a rollback.

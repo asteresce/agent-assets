@@ -1,0 +1,101 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+
+  "model": "opencode-go/minimax-m3",
+  "small_model": "opencode-go/mimo-v2.6-flash",
+
+  "agent": {
+    "plan": {
+      "mode": "primary",
+      "temperature": 0.1,
+      "permission": {
+        "edit": "deny",
+        "bash": {
+          "*": "deny",
+          "git status*": "allow",
+          "git diff*": "allow",
+          "git log*": "allow"
+        },
+        "task": {
+          "*": "deny",
+          "explore": "allow",
+          "scout": "allow"
+        }
+      }
+    },
+
+    "build": {
+      "mode": "primary",
+      "temperature": 0.2,
+      "permission": {
+        "edit": "allow",
+        "bash": {
+          "*": "ask",
+          "git status*": "allow",
+          "git diff*": "allow",
+          "git log*": "allow",
+          "git add*": "allow",
+          "git commit*": "ask",
+          "git push*": "deny",
+          "rm -rf*": "deny"
+        },
+        "task": {
+          "*": "deny",
+          "explore": "allow",
+          "scout": "allow",
+          "general": "allow",
+          "tester": "allow",
+          "reviewer": "allow"
+        }
+      }
+    },
+
+    "explore": {
+      "model": "opencode-go/mimo-v2.6-flash"
+    },
+
+    "scout": {
+      "model": "opencode-go/mimo-v2.6-flash"
+    },
+
+    "general": {
+      "model": "opencode-go/gpt-6-luna"
+    },
+
+    "tester": {
+      "description": "Runs tests, lint and type-check, then reports only failures and the likely cause. Use after changes to verify them.",
+      "mode": "subagent",
+      "model": "opencode-go/glm-5.3-flash",
+      "temperature": 0.1,
+      "steps": 10,
+      "prompt": "Run the requested checks. Return only failing tests or errors, the exact messages, and the most likely cause. Do not modify files.",
+      "permission": {
+        "edit": "deny",
+        "bash": {
+          "*": "deny",
+          "npm test*": "allow",
+          "npm run lint*": "allow",
+          "npx tsc*": "allow"
+        }
+      }
+    },
+
+    "reviewer": {
+      "description": "Skeptical read-only review of a diff for bugs, security issues and missing tests. Use before finishing any non-trivial change.",
+      "mode": "subagent",
+      "model": "opencode-go/kimi-k3",
+      "temperature": 0.1,
+      "steps": 15,
+      "prompt": "You are an adversarial code reviewer. Inspect the current diff. Report correctness bugs, edge cases, security issues and missing tests, ordered by severity, with file and line references. Do not rewrite code unless needed to demonstrate a bug. Keep the report concise.",
+      "permission": {
+        "edit": "deny",
+        "bash": {
+          "*": "deny",
+          "git diff*": "allow",
+          "git log*": "allow",
+          "git show*": "allow"
+        }
+      }
+    }
+  }
+}
