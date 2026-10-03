@@ -17,21 +17,9 @@ def copy_directory(src, dst):
 
 
 def apply_json_injections(project_root, config):
-    injections = []
-    for category in ("rules", "skills", "agents"):
-        cat_cfg = (config or {}).get(category) or {}
-        for entry in (cat_cfg.get("injections") or {}).get("json") or []:
-            injections.append(entry)
-    if not injections:
+    grouped = jmerge.collect(config)
+    if not grouped:
         return []
-    grouped = {}
-    for entry in injections:
-        fp = entry["file"]
-        content = entry.get("content") or {}
-        if fp in grouped:
-            grouped[fp] = jmerge.deep_merge(grouped[fp], content)
-        else:
-            grouped[fp] = content
     reports = []
     for fp, content in grouped.items():
         target = os.path.join(project_root, fp)
@@ -95,7 +83,7 @@ def reconcile_owned(project_root, emission_root, new_entries, prev_entries):
     return actions
 
 
-def sync(project_root, emission_root, config):
+def sync(project_root, emission_root, config, manifest="./agent-assets.lock"):
     json_reports = apply_json_injections(project_root, config)
 
     emission_lock_path = os.path.join(emission_root, "agent-assets.lock")
@@ -103,16 +91,13 @@ def sync(project_root, emission_root, config):
     if new_entries is None:
         new_entries = []
 
-    manifest_path = os.path.normpath(os.path.join(project_root, "agent-assets.lock"))
+    manifest_path = os.path.normpath(os.path.join(project_root, manifest))
     prev_entries = lock.read_lock(manifest_path)
 
     actions = reconcile_owned(project_root, emission_root, new_entries, prev_entries)
 
     os.makedirs(os.path.dirname(manifest_path) or ".", exist_ok=True)
-    with open(manifest_path, "w", encoding="utf-8") as f:
-        json.dump({"version": lock.LOCK_VERSION, "entries": new_entries}, f,
-                  indent=2, sort_keys=True, ensure_ascii=False)
-        f.write("\n")
+    lock.write_lock(manifest_path, new_entries)
 
     return {
         "json_injections": json_reports,

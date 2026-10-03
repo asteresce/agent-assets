@@ -1,10 +1,10 @@
-import json
 import os
 import shutil
 
 from . import frontmatter, hashing, lock
 
 
+# Mirrors lib/schemas/formats.nix.
 CATEGORIES = ("rules", "skills", "agents")
 FILE_BASED = {"rules", "agents"}
 
@@ -13,17 +13,6 @@ def normalize_import(imp):
     if isinstance(imp, str):
         return {"name": imp}
     return dict(imp)
-
-
-def normalize_category(category_name, category_config, registry):
-    if category_config is None:
-        return None
-    cfg = dict(category_config)
-    cfg.setdefault("root", f"./.agent-assets/{category_name}")
-    cfg.setdefault("imports", [])
-    cfg.setdefault("injections", {})
-    cfg["imports"] = [normalize_import(i) for i in cfg["imports"]]
-    return cfg
 
 
 def resolve_out_path(category, imp, root):
@@ -35,7 +24,7 @@ def resolve_out_path(category, imp, root):
     return os.path.join(rel_dir, imp["name"])
 
 
-def build(config, registry, src_dir, out_dir):
+def build(config, src_dir, out_dir):
     os.makedirs(out_dir, exist_ok=True)
     entries = []
 
@@ -66,7 +55,7 @@ def build(config, registry, src_dir, out_dir):
                     f.write(rendered)
                 digest = hashing.sha256_file(target)
                 hash_value = hashing.to_nix_hash(digest)
-                entries.append(lock.entry_for_file(category, name, rel_target, hash_value))
+                entries.append(lock.entry(category, name, rel_target, hash_value))
             else:
                 source = os.path.join(src_dir, category, name)
                 if not os.path.isdir(source):
@@ -87,7 +76,7 @@ def build(config, registry, src_dir, out_dir):
                         f.write(rendered)
                 registry_files = hashing.list_registry_files(source)
                 hash_value = hashing.dir_hash(target, registry_files)
-                entries.append(lock.entry_for_directory(category, name, rel_target, hash_value))
+                entries.append(lock.entry(category, name, rel_target, hash_value))
 
     lock_path = os.path.join(out_dir, "agent-assets.lock")
     lock.write_lock(lock_path, entries)

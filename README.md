@@ -72,7 +72,7 @@ The module reads a single declarative configuration and emits a project-tree ove
 ## Sync to the project
 
 ```bash
-nix run .#agentAssets.sync
+nix run .#sync
 ```
 
 Reconciles the project with the emitted tree using `./agent-assets.lock`:
@@ -89,7 +89,7 @@ Files under managed roots that are not in any lock are preserved (custom local f
 ## Check for drift
 
 ```bash
-nix run .#agentAssets.check
+nix run .#check
 ```
 
 Reports:

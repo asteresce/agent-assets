@@ -8,21 +8,20 @@
       headings = import ./lib/schemas/headings.nix;
       formats = import ./lib/schemas/formats.nix;
       assets = import ./lib/assets.nix;
-      injections = import ./lib/injections.nix;
-      mkAgentAssets = import ./lib/mkAgentAssets.nix;
       flakeModule = ./flake-module.nix;
       supportedSystems = [ "x86_64-linux" "aarch64-linux" "aarch64-darwin" "x86_64-darwin" ];
       forAllSystems = nixpkgs.lib.genAttrs supportedSystems;
+
+      # Public-API convenience: callers pass `pkgs` so the nixpkgs they
+      # pinned is the one we use. This avoids hidden <nixpkgs> imports.
+      mkAgentAssets = pkgs: import ./lib/mkAgentAssets.nix { inherit pkgs; };
     in
     {
       flakeModules.default = flakeModule;
 
       lib = {
-        inherit headings formats assets injections mkAgentAssets;
-        scripts = {
-          sync = import ./scripts/sync.nix;
-          check = import ./scripts/check.nix;
-        };
+        inherit headings formats assets;
+        mkAgentAssets = mkAgentAssets;
       };
 
       checks = forAllSystems (system:
@@ -41,6 +40,7 @@
             installPhase = "mkdir -p $out";
           };
           selfTest = pkgs.callPackage ./checks/self-test.nix { };
+          nixRoundtrip = pkgs.callPackage ./checks/nix-roundtrip.nix { };
         });
     };
 }

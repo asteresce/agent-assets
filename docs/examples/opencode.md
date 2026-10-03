@@ -75,7 +75,7 @@ The module itself has no OpenCode-specific options; the wiring below is entirely
 ## Apply to the project
 
 ```bash
-nix run .#agentAssets.sync
+nix run .#sync
 ```
 
 This:
@@ -97,7 +97,7 @@ Skills are directory-based: the imported skill directory is copied as-is, and `S
 ## Check for drift
 
 ```bash
-nix run .#agentAssets.check
+nix run .#check
 ```
 
 Reports any owned file or skill dir whose hash differs from `./agent-assets.lock`, any JSON injection target missing our chunk's keys, and any orphans under managed roots. Exits non-zero on any report.

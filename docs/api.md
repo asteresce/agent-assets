@@ -7,12 +7,12 @@ The flake exposes:
 | Output | Description |
 |---|---|
 | `flakeModules.default` | The flake-parts module. |
-| `lib.mkAgentAssets` | Pure function for building assets from a config attrset. |
+| `lib.mkAgentAssets` | Pure helper: given `{ pkgs, config }`, returns `{ package, path }`. |
 | `lib.assets.<category>.<name>` | Registry of shared asset sources. Rules and agents are files; skills are directories. |
 | `lib.schemas.headings` | Section heading schemas for rules, skills, and agents. |
 | `lib.schemas.formats` | Asset format per category (`file` or `directory`). |
-| `apps.agentAssets.sync` | Apply the emitted tree to the project. |
-| `apps.agentAssets.check` | Report drift and validate section headings for imported assets. |
+| `apps.<system>.sync` | Apply the emitted tree to the project. |
+| `apps.<system>.check` | Report drift and validate section headings for imported assets. |
 
 ## flake-parts module options
 
@@ -29,7 +29,8 @@ Options live under `perSystem.agentAssets`.
 - Type: `bool`
 - Default: `false`
 
-Enable the module for this system.
+Enable the module. Apps (`sync`, `check`) are only emitted when this is
+`true` **and** `config` is non-empty.
 
 ### `agentAssets.config`
 
@@ -44,24 +45,20 @@ Top-level schema:
 
 ```nix
 {
-  manifest ? "./agent-assets.lock" :: string;
   rules = { ... };
   skills = { ... };
   agents = { ... };
 }
 ```
 
-`manifest` is the path to the lock file written by sync and consulted by
-check. It is required and non-nullable; sync always creates or refreshes it.
+### `agentAssets.manifest`
 
-### `agentAssets.output`
+- Type: `string`
+- Default: `"./agent-assets.lock"`
 
-Read-only attribute set describing the generated output. Exposed as `config.agentAssets.output`.
-
-| Attribute | Description |
-|---|---|
-| `package` | The derivation containing the project-tree overlay. |
-| `path` | Path to the overlay root. |
+Path to the lock file, relative to the project root. Sync writes this file
+and check reads it. The emission's internal `agent-assets.lock` (which
+records the emitted tree) is separate and not configurable.
 
 ## Category config schema
 
@@ -106,19 +103,23 @@ Attribute set of category-level injections applied to every asset in the categor
 For projects not using flake-parts:
 
 ```nix
-agent-assets.lib.mkAgentAssets {
-  manifest ? "./agent-assets.lock" :: string;
+agent-assets.lib.mkAgentAssets pkgs {
   rules = { ... };
   skills = { ... };
   agents = { ... };
 }
 ```
 
-Returns an attribute set with `package` and `path`.
+Returns `{ package, path }`. `pkgs` must be the nixpkgs the consumer wants
+to use (no hidden `<nixpkgs>` import). The `manifest` option is not part of
+this helper; if you also want sync/check, wrap a derivation yourself.
 
 ## Flake apps
 
-### `nix run .#agentAssets.sync`
+Apps are only emitted when `agentAssets.enable = true` and `config` is
+non-empty. Each app uses the `pkgs` of the system it was instantiated for.
+
+### `nix run .#sync`
 
 1. Applies JSON injections: deep-merges our keys into the target files.
 2. Reconciles owned files (rules, agents, skills) using the lock:
@@ -130,7 +131,7 @@ Returns an attribute set with `package` and `path`.
 
 Files under managed roots that are not in any lock are preserved (custom local files). If the lock is missing or unreadable, sync writes a fresh one and skips orphan deletion for that run.
 
-### `nix run .#agentAssets.check`
+### `nix run .#check`
 
 Reports:
 

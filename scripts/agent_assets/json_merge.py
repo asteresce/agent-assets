@@ -34,3 +34,21 @@ def chunk_present(target, chunk):
             if target[k] != v:
                 return False
     return True
+
+
+def collect(config):
+    """Walk every category's `injections.json` and deep-merge by `file` path.
+
+    Returns a dict mapping target file path -> merged content dict.
+    """
+    grouped = {}
+    for category in ("rules", "skills", "agents"):
+        cat_cfg = (config or {}).get(category) or {}
+        for entry in (cat_cfg.get("injections") or {}).get("json") or []:
+            fp = entry["file"]
+            content = entry.get("content") or {}
+            if fp in grouped:
+                grouped[fp] = deep_merge(grouped[fp], content)
+            else:
+                grouped[fp] = content
+    return grouped

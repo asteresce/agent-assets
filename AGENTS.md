@@ -9,7 +9,9 @@ This repository is a Nix flake module that shares provider-neutral agent assets 
 - **Import declaration** — the data set a consumer writes to import an asset (`{ name, rename, destination, injections }`).
 - **Injection** — a data-driven transformation applied to an asset before emission.
 - **Emission target** — the project-tree overlay the consumer applies.
-- **Provenance marker** — a comment injected at the top of every imported asset.
+- **Lock file** — `./agent-assets.lock` (path is configurable via
+  `agentAssets.manifest`). Records the emitted state for idempotent sync
+  and orphan removal.
 
 ## Where shared assets live
 
@@ -29,7 +31,7 @@ Every shared asset must conform to the section schema for its category. The sche
 - All headings must match the schema exactly; unknown headings are not allowed.
 - Sections must appear in schema order.
 
-Run `nix flake check` to validate repository assets. Client check (`nix run .#agentAssets.check`) validates imported assets as well.
+Run `nix flake check` to validate repository assets. Client check (`nix run .#check`) validates imported assets as well.
 
 ## How to add a shared asset
 
@@ -44,7 +46,10 @@ Run `nix flake check` to validate repository assets. Client check (`nix run .#ag
 ## How to add an injection type
 
 1. Accept pure data in the configuration schema.
-2. Export the transformation logic from the flake under `lib.injections.<name>` (used by the module, not written into user config).
+2. Implement the transformation in `scripts/agent_assets/<name>.py`. It is
+   invoked from `scripts/agent_assets/overlay.py` (during build) or
+   `scripts/agent_assets/sync.py` (during sync). Do not expose it as a Nix
+   helper — the configuration is the public interface.
 3. Document it in `docs/injections/<name>.md`.
 4. Keep the core docs provider-agnostic.
 

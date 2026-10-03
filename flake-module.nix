@@ -2,22 +2,21 @@
 
 let
   cfg = config.agentAssets;
-  mkAgentAssets = import ./mkAgentAssets.nix;
   resolvedConfig =
     if lib.isPath cfg.config then import cfg.config
     else cfg.config;
-  output =
-    if cfg.enable && resolvedConfig != {} then
-      mkAgentAssets resolvedConfig
-    else
-      { package = null; path = null; };
+  isActive = cfg.enable && resolvedConfig != {};
 in
 {
   options.agentAssets = {
     enable = lib.mkOption {
       type = lib.types.bool;
       default = false;
-      description = "Enable the agent-assets module.";
+      description = ''
+        Enable the agent-assets module. When false, no apps are emitted.
+        `nix run .#sync` requires `enable = true` and a non-empty
+        `config`.
+      '';
     };
     config = lib.mkOption {
       type = lib.types.either lib.types.attrs (lib.types.path);
@@ -31,19 +30,38 @@ in
       type = lib.types.str;
       default = "./agent-assets.lock";
       description = ''
-        Path to the lock file. Required and non-nullable; sync always creates
-        or refreshes it.
+        Path to the lock file, relative to the project root. Sync writes this
+        file and check reads it.
       '';
-    };
-    output = lib.mkOption {
-      type = lib.types.attrs;
-      readOnly = true;
-      default = { package = null; path = null; };
-      description = "Read-only output: { package, path }.";
     };
   };
 
+  # Apps are emitted as `apps.<system>.sync` and `apps.<system>.check` so
+  # consumers can run `nix run .#sync` and `nix run .#check`.
   config = {
-    agentAssets.output = output;
+    perSystem = { pkgs, ... }: let
+      makeProgram = params:
+        let drv = (import ./scripts/wrapper.nix { inherit pkgs; }) params;
+        in "${drv}/bin/agent-assets-${params.name}";
+    in {
+      apps.sync = lib.optionalAttrs isActive {
+        type = "app";
+        program = makeProgram {
+          name = "sync";
+          script = "sync";
+          config = resolvedConfig;
+          manifest = cfg.manifest;
+        };
+      };
+      apps.check = lib.optionalAttrs isActive {
+        type = "app";
+        program = makeProgram {
+          name = "check";
+          script = "check";
+          config = resolvedConfig;
+          manifest = cfg.manifest;
+        };
+      };
+    };
   };
 }

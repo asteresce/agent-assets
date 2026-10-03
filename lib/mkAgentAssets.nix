@@ -1,5 +1,6 @@
+{ pkgs }:
+
 let
-  pkgs = import <nixpkgs> {};
   src = ./..;
   scripts = src + "/scripts";
   pythonWithYaml = pkgs.python3.withPackages (ps: [ ps.pyyaml ]);

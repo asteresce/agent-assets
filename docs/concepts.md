@@ -51,8 +51,8 @@ Supported injections:
 
 ## Lock
 
-Every sync writes a JSON lock file at `./agent-assets.lock` (configurable,
-non-nullable, always created).
+Every sync writes a JSON lock file at `./agent-assets.lock` (the path is
+configurable via the flake-parts module's `agentAssets.manifest` option).
 
 The lock records, for each owned file or directory:
 

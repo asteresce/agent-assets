@@ -4,23 +4,6 @@ import os
 from . import hashing, json_merge as jmerge, lock
 
 
-def find_json_injections(config):
-    injections = []
-    for category in ("rules", "skills", "agents"):
-        cat_cfg = (config or {}).get(category) or {}
-        for entry in (cat_cfg.get("injections") or {}).get("json") or []:
-            injections.append(entry)
-    grouped = {}
-    for entry in injections:
-        fp = entry["file"]
-        content = entry.get("content") or {}
-        if fp in grouped:
-            grouped[fp] = jmerge.deep_merge(grouped[fp], content)
-        else:
-            grouped[fp] = content
-    return grouped
-
-
 def check_owned(project_root, new_entries, prev_entries):
     reports = []
     prev_by_path = {e["path"]: e for e in (prev_entries or [])}
@@ -81,14 +64,14 @@ def check_json(project_root, grouped_injections):
     return reports
 
 
-def check(project_root, emission_root, config):
-    grouped_json = find_json_injections(config)
+def check(project_root, emission_root, config, manifest="./agent-assets.lock"):
+    grouped_json = jmerge.collect(config)
     json_reports = check_json(project_root, grouped_json)
 
     emission_lock = os.path.join(emission_root, "agent-assets.lock")
     new_entries = lock.read_lock(emission_lock) or []
 
-    manifest_path = os.path.normpath(os.path.join(project_root, "agent-assets.lock"))
+    manifest_path = os.path.normpath(os.path.join(project_root, manifest))
     prev_entries = lock.read_lock(manifest_path)
 
     owned_reports = check_owned(project_root, new_entries, prev_entries)

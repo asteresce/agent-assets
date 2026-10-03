@@ -51,7 +51,7 @@ def fixture_config_b():
 
 
 def build_emission(cfg, src_dir, out_dir):
-    overlay.build(cfg, registry=None, src_dir=src_dir, out_dir=out_dir)
+    overlay.build(cfg, src_dir=src_dir, out_dir=out_dir)
 
 
 def sha256_file(path):

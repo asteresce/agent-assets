@@ -23,6 +23,8 @@ def split_frontmatter(source):
 
 
 def deep_merge(a, b):
+    # Intentionally different from json_merge.deep_merge: frontmatter lists
+    # are deduplicated, JSON lists concat.
     if isinstance(a, dict) and isinstance(b, dict):
         out = dict(a)
         for k, v in b.items():
