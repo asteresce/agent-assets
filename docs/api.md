@@ -44,13 +44,15 @@ Top-level schema:
 
 ```nix
 {
+  manifest ? "./agent-assets.lock" :: string;
   rules = { ... };
   skills = { ... };
   agents = { ... };
 }
 ```
 
-Each category uses the schema below.
+`manifest` is the path to the lock file written by sync and consulted by
+check. It is required and non-nullable; sync always creates or refreshes it.
 
 ### `agentAssets.output`
 
@@ -105,6 +107,7 @@ For projects not using flake-parts:
 
 ```nix
 agent-assets.lib.mkAgentAssets {
+  manifest ? "./agent-assets.lock" :: string;
   rules = { ... };
   skills = { ... };
   agents = { ... };
@@ -117,8 +120,22 @@ Returns an attribute set with `package` and `path`.
 
 ### `nix run .#agentAssets.sync`
 
-Copies the emitted tree into the project. Only files with the provenance marker are overwritten; custom local files are left untouched.
+1. Applies JSON injections: deep-merges our keys into the target files.
+2. Reconciles owned files (rules, agents, skills) using the lock:
+   - Skips files whose on-disk hash matches the lock.
+   - Overwrites files whose hash differs.
+   - Recopies skill directories whose dir hash differs.
+   - Deletes files in the previous lock but absent from the current emission.
+3. Refreshes the lock.
+
+Files under managed roots that are not in any lock are preserved (custom local files). If the lock is missing or unreadable, sync writes a fresh one and skips orphan deletion for that run.
 
 ### `nix run .#agentAssets.check`
 
-Compares imported files in the project against the emitted tree and reports differences. Custom local files are ignored.
+Reports:
+
+- Drift: owned file or skill dir whose hash differs from the lock.
+- JSON injection drift: target files missing the chunk's keys.
+- Orphans: paths under managed roots in the previous lock but absent from the current one.
+
+Exits non-zero on any report. Custom local files (not in any lock) are never flagged.

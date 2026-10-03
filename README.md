@@ -11,7 +11,7 @@ The module reads a single declarative configuration and emits a project-tree ove
 - Injections that transform imported assets:
   - `frontmatter` — inject YAML frontmatter.
   - `json` — inject static content into JSON files.
-- Automatic provenance comments on imported files.
+- A `./agent-assets.lock` file that records the emitted state for idempotent sync and orphan removal.
 - Flake apps for syncing and checking imported assets.
 
 ## Quick start
@@ -75,7 +75,16 @@ The module reads a single declarative configuration and emits a project-tree ove
 nix run .#agentAssets.sync
 ```
 
-This copies the emitted tree into the project, overwriting only files that carry the provenance marker.
+Reconciles the project with the emitted tree using `./agent-assets.lock`:
+
+- Applies JSON injections: deep-merges our keys into the target files.
+- Skips owned files whose on-disk hash already matches the lock.
+- Overwrites owned files whose hash differs.
+- Recopies skill directories whose directory hash differs.
+- Deletes files listed in the previous lock but absent from the current emission.
+- Refreshes the lock.
+
+Files under managed roots that are not in any lock are preserved (custom local files). If the lock is missing or unreadable, sync writes a fresh one and skips orphan deletion for that run.
 
 ## Check for drift
 
@@ -83,7 +92,13 @@ This copies the emitted tree into the project, overwriting only files that carry
 nix run .#agentAssets.check
 ```
 
-This compares imported files in the project against the generated tree and reports differences.
+Reports:
+
+- Drift: owned file or skill dir whose hash differs from `./agent-assets.lock`.
+- JSON injection drift: target files missing the chunk's keys.
+- Orphans: paths under managed roots in the previous lock but absent from the current one.
+
+Exits non-zero on any report. Custom local files (not in any lock) are never flagged.
 
 ## Moving the configuration to a separate file
 

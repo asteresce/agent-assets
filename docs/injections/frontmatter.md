@@ -78,4 +78,5 @@ owner: security-team
 Do not commit secrets.
 ```
 
-The provenance comment is inserted immediately after the frontmatter block.
+The merged frontmatter is reflected in the file's content hash recorded in
+`./agent-assets.lock`. It is not stored separately.

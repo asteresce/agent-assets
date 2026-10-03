@@ -29,7 +29,13 @@ Add a `json` list under a category's `injections`:
 
 ## Output
 
-The resulting JSON file is placed in the emitted tree at the specified `file` path, relative to the overlay root. The client applies the overlay to their project.
+JSON injection does not take ownership of the file. The target file is not
+listed in `./agent-assets.lock`, not hashed, and not deleted on orphan
+removal. Sync deep-merges the `content` into the existing file (or creates a
+new one with our keys if missing), preserving user-added keys. Re-running
+with the same config is idempotent — our keys remain, user keys are preserved.
+
+The target file lives wherever the config places it, relative to the project root.
 
 ## Example
 

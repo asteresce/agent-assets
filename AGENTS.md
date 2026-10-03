@@ -66,6 +66,7 @@ The `opencode.json` file in this repository is only for maintaining this project
 - The configuration is pure data: no functions, no Nix variable expansion. This lets the same config be moved to JSON later.
 - Injections support both global (category-level) and per-import configuration.
 - Imports select only from the shared registry (`name`).
+- Provenance is tracked by a JSON lock file in the consumer project (default `./agent-assets.lock`), not by markers embedded in emitted files.
 
 ## Documentation style
 

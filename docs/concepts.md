@@ -49,16 +49,41 @@ Supported injections:
 - [`frontmatter`](injections/frontmatter.md)
 - [`json`](injections/json.md)
 
-## Provenance marker
+## Lock
 
-Every imported asset receives a machine-readable HTML comment after its frontmatter:
+Every sync writes a JSON lock file at `./agent-assets.lock` (configurable,
+non-nullable, always created).
 
-```markdown
-<!-- agent-assets: rules/security -->
-```
+The lock records, for each owned file or directory:
 
-This lets sync/check commands distinguish imported assets from custom local files.
+- `category` and `name` — registry reference.
+- `path` — location relative to the project.
+- `hash` — `sha256-` content hash of the emitted bytes. For directory-backed
+  imports, a Merkle-style hash over the files we manage.
+
+The hash captures the entire emitted state, including any frontmatter
+injection. Frontmatter, JSON injections, and other transformations are
+*implicit* in the hash — they are not recorded separately.
+
+Sync:
+
+- Skips owned files whose on-disk hash matches the lock (idempotent).
+- Overwrites owned files whose hash differs.
+- Recopies skill directories whose dir hash differs.
+- Deletes files present in the previous lock but absent from the current one
+  (stale orphans).
+- Refreshes the lock.
+
+Files under managed roots that are not in any lock are preserved (custom
+local files). If the lock is missing or unreadable on sync, a fresh one is
+written and orphan deletion is skipped for that run.
+
+JSON injections are applied as a side-effect during sync: our chunk's keys are
+deep-merged (list concatenation) into the target file. JSON files are *not*
+tracked in the lock, since we do not claim ownership of them.
 
 ## Emission target
 
-The emission target is a project-tree overlay. It contains the imported assets arranged under their category roots, plus any JSON files created by JSON injections.
+The emission target is a project-tree overlay. It contains the imported assets
+arranged under their category roots. JSON injection files live wherever the
+config places them and are not part of the overlay.

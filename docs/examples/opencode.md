@@ -78,24 +78,29 @@ The module itself has no OpenCode-specific options; the wiring below is entirely
 nix run .#agentAssets.sync
 ```
 
-This places:
+This:
 
-- `.opencode/rules/code-style.md`
-- `.opencode/rules/conventions/commit-convention.md`
-- `.opencode/skills/migration/SKILLS.md`
-- `.opencode/skills/migration/rollback-checklist.md`
-- `.opencode/agents/build.md`
-- `./opencode.json` (with the `instructions` entry)
+- Places the imported assets under their category roots:
+  - `.opencode/rules/code-style.md`
+  - `.opencode/rules/conventions/commit-convention.md`
+  - `.opencode/skills/migration/SKILLS.md`
+  - `.opencode/skills/migration/rollback-checklist.md`
+  - `.opencode/agents/build.md`
+- Merges the JSON injection into `./opencode.json` (existing keys preserved).
+- Skips owned files whose on-disk hash already matches `./agent-assets.lock`.
+- Refreshes `./agent-assets.lock`.
 
-Only files carrying the provenance marker are overwritten.
+Custom local files under managed roots (not in any lock) are preserved. Files listed in a previous lock but absent from the current emission are deleted.
 
-Skills are directory-based: the imported skill directory is copied as-is, and `SKILLS.md` is validated and may receive frontmatter injections.
+Skills are directory-based: the imported skill directory is copied as-is, and `SKILLS.md` is validated and may receive frontmatter injections. The skill's directory hash captures the contents of all files we manage.
 
 ## Check for drift
 
 ```bash
 nix run .#agentAssets.check
 ```
+
+Reports any owned file or skill dir whose hash differs from `./agent-assets.lock`, any JSON injection target missing our chunk's keys, and any orphans under managed roots. Exits non-zero on any report.
 
 ## Result
 
