@@ -11,8 +11,7 @@ The flake exposes:
 | `lib.assets.<category>.<name>` | Registry of shared asset sources. Rules and agents are files; skills are directories. |
 | `lib.schemas.headings` | Section heading schemas for rules, skills, and agents. |
 | `lib.schemas.formats` | Asset format per category (`file` or `directory`). |
-| `apps.<system>.sync` | Apply the emitted tree to the project. |
-| `apps.<system>.check` | Report drift and validate section headings for imported assets. |
+| `apps.<system>.<name>` | Subcommands of `python -m agent_assets`. Default apps are `sync` and `check`. |
 
 ## flake-parts module options
 
@@ -60,6 +59,15 @@ Path to the lock file, relative to the project root. Sync writes this file
 and check reads it. The emission's internal `agent-assets.lock` (which
 records the emitted tree) is separate and not configurable.
 
+### `agentAssets.apps`
+
+- Type: `list of string`
+- Default: `[ "sync" "check" ]`
+
+Subcommand names to expose as flake apps. Each name must correspond to a
+`python -m agent_assets <name>` subcommand. The default covers the
+common cases; advanced users can extend or trim the list.
+
 ## Category config schema
 
 ```nix
@@ -71,6 +79,8 @@ records the emitted tree) is separate and not configurable.
 ```
 
 Rules and agents are imported as single Markdown files. Skills are imported as directories containing a `SKILLS.md` file.
+
+If `root` is omitted, it defaults to `./.agent-assets/<category>`.
 
 ### `imports`
 
@@ -118,6 +128,7 @@ this helper; if you also want sync/check, wrap a derivation yourself.
 
 Apps are only emitted when `agentAssets.enable = true` and `config` is
 non-empty. Each app uses the `pkgs` of the system it was instantiated for.
+By default, `sync` and `check` apps are exposed.
 
 ### `nix run .#sync`
 
@@ -129,7 +140,9 @@ non-empty. Each app uses the `pkgs` of the system it was instantiated for.
    - Deletes files in the previous lock but absent from the current emission.
 3. Refreshes the lock.
 
-Files under managed roots that are not in any lock are preserved (custom local files). If the lock is missing or unreadable, sync writes a fresh one and skips orphan deletion for that run.
+Files under managed roots that are not in any lock are preserved (custom
+local files). If the lock is missing or unreadable, sync writes a fresh
+one and skips orphan deletion for that run.
 
 ### `nix run .#check`
 
@@ -137,6 +150,7 @@ Reports:
 
 - Drift: owned file or skill dir whose hash differs from the lock.
 - JSON injection drift: target files missing the chunk's keys.
-- Orphans: paths under managed roots in the previous lock but absent from the current one.
+- Orphans: paths under managed roots in the previous lock but absent from the current emission.
+- Heading errors: section-heading violations on imported assets.
 
 Exits non-zero on any report. Custom local files (not in any lock) are never flagged.

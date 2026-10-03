@@ -69,6 +69,9 @@ The module reads a single declarative configuration and emits a project-tree ove
 }
 ```
 
+A fuller example, including the `skills` and `agents` blocks, is in
+[`docs/examples/opencode.md`](docs/examples/opencode.md).
+
 ## Sync to the project
 
 ```bash
@@ -86,6 +89,8 @@ Reconciles the project with the emitted tree using `./agent-assets.lock`:
 
 Files under managed roots that are not in any lock are preserved (custom local files). If the lock is missing or unreadable, sync writes a fresh one and skips orphan deletion for that run.
 
+For the full description, see [Sync behaviour](docs/concepts.md#sync-behaviour).
+
 ## Check for drift
 
 ```bash
@@ -96,9 +101,12 @@ Reports:
 
 - Drift: owned file or skill dir whose hash differs from `./agent-assets.lock`.
 - JSON injection drift: target files missing the chunk's keys.
-- Orphans: paths under managed roots in the previous lock but absent from the current one.
+- Orphans: paths under managed roots in the previous lock but absent from the current emission.
+- Heading errors: section-heading violations on imported assets.
 
 Exits non-zero on any report. Custom local files (not in any lock) are never flagged.
+
+For the full description, see [Check behaviour](docs/concepts.md#check-behaviour).
 
 ## Moving the configuration to a separate file
 
@@ -133,4 +141,4 @@ AGENTS.md          # contributor guidance for this repo
 
 ## Status
 
-The documented public API is implemented. `nix flake check` runs the headings check and a 23-scenario self-test that exercises sync/check/JSON injection/idempotency/orphan-removal/custom-file preservation.
+The documented public API is implemented. `nix flake check` runs the headings check, the 24-scenario self-test, and the nix-roundtrip smoke test that exercises sync/check/JSON injection/idempotency/orphan-removal/custom-file preservation.

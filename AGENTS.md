@@ -19,6 +19,8 @@ This repository is a Nix flake module that shares provider-neutral agent assets 
 - `skills/` for provider-neutral skills.
 - `agents/` for provider-neutral agent prompts.
 
+(See `README.md` for the full project layout.)
+
 Each asset should describe *what* the agent should do, not *how* a specific agent loads it.
 
 ## Asset section schema

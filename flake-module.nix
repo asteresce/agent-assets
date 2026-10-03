@@ -5,7 +5,19 @@ let
   resolvedConfig =
     if lib.isPath cfg.config then import cfg.config
     else cfg.config;
-  isActive = cfg.enable && resolvedConfig != {};
+  hasConfig = resolvedConfig != {};
+  isActive = cfg.enable && hasConfig;
+
+  # Apps are emitted as `apps.<system>.<name>` so consumers can run
+  # `nix run .#sync` and `nix run .#check`. The list of apps is
+  # configurable so consumers can opt out or add new subcommands.
+  makeProgram = pkgs: name:
+    let drv = (import ./scripts/wrapper.nix { inherit pkgs; }) {
+      inherit name;
+      config = resolvedConfig;
+      manifest = cfg.manifest;
+    };
+    in "${drv}/bin/agent-assets-${name}";
 in
 {
   options.agentAssets = {
@@ -22,46 +34,35 @@ in
       type = lib.types.either lib.types.attrs (lib.types.path);
       default = {};
       description = ''
-        Declarative configuration. Can be an attrset or a path that evaluates
-        to the same shape.
+        Declarative configuration. Can be an attrset or a path that
+        evaluates to the same shape.
       '';
     };
     manifest = lib.mkOption {
       type = lib.types.str;
       default = "./agent-assets.lock";
       description = ''
-        Path to the lock file, relative to the project root. Sync writes this
-        file and check reads it.
+        Path to the lock file, relative to the project root. Sync writes
+        this file and check reads it.
+      '';
+    };
+    apps = lib.mkOption {
+      type = lib.types.listOf lib.types.str;
+      default = [ "sync" "check" ];
+      description = ''
+        Subcommand names to expose as flake apps. Each name must
+        correspond to a `python -m agent_assets <name>` subcommand.
       '';
     };
   };
 
-  # Apps are emitted as `apps.<system>.sync` and `apps.<system>.check` so
-  # consumers can run `nix run .#sync` and `nix run .#check`.
   config = {
-    perSystem = { pkgs, ... }: let
-      makeProgram = params:
-        let drv = (import ./scripts/wrapper.nix { inherit pkgs; }) params;
-        in "${drv}/bin/agent-assets-${params.name}";
-    in {
-      apps.sync = lib.optionalAttrs isActive {
-        type = "app";
-        program = makeProgram {
-          name = "sync";
-          script = "sync";
-          config = resolvedConfig;
-          manifest = cfg.manifest;
-        };
-      };
-      apps.check = lib.optionalAttrs isActive {
-        type = "app";
-        program = makeProgram {
-          name = "check";
-          script = "check";
-          config = resolvedConfig;
-          manifest = cfg.manifest;
-        };
-      };
+    perSystem = { pkgs, ... }: {
+      apps = lib.genAttrs cfg.apps (name:
+        lib.optionalAttrs isActive {
+          type = "app";
+          program = makeProgram pkgs name;
+        });
     };
   };
 }

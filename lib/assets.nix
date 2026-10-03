@@ -1,44 +1,42 @@
+# Registry of shared asset sources under `src/{rules,skills,agents}/`.
+#
+# `pickers.<format>` selects how each category's directory is walked.
+# The per-category format is derived from `lib/schemas/formats.nix`, so
+# adding or renaming a category there automatically updates the registry.
 let
   formats = import ./schemas/formats.nix;
-in
-src:
-let
+  mdExt = "\\.md$";
   stripExt = name:
-    let
-      parts = builtins.split "\\.md$" name;
-    in
-    if builtins.length parts == 0 then name else builtins.head parts;
+    let parts = builtins.split mdExt name;
+    in if builtins.length parts == 0 then name else builtins.head parts;
+  isAssetFile = name:
+    let ext = stripExt name;
+    in ext != name;
 
-  endsWithMd = name:
-    let
-      parts = builtins.split "\\.md$" name;
-    in
-    builtins.length parts != 0;
-
-  readFileCategory = category:
+  walk = fmt: src: category:
     let
       dir = src + "/${category}";
       entries = builtins.readDir dir;
-      isMdFile = n: entries.${n} == "regular" && n != "README.md" && endsWithMd n;
-      names = builtins.filter isMdFile (builtins.attrNames entries);
     in
-    builtins.listToAttrs (map
-      (n: { name = stripExt n; value = dir + "/${n}"; })
-      names);
-
-  readDirectoryCategory = category:
-    let
-      dir = src + "/${category}";
-      entries = builtins.readDir dir;
-      isSkill = n: entries.${n} == "directory";
-      names = builtins.filter isSkill (builtins.attrNames entries);
-    in
-    builtins.listToAttrs (map
-      (n: { name = n; value = dir + "/${n}"; })
-      names);
+    if fmt == "file" then
+      let
+        isMdFile = n: entries.${n} == "regular" && n != "README.md" && isAssetFile n;
+        names = builtins.filter isMdFile (builtins.attrNames entries);
+      in
+      builtins.listToAttrs (map
+        (n: { name = stripExt n; value = dir + "/${n}"; })
+        names)
+    else
+      let
+        isDir = n: entries.${n} == "directory";
+        names = builtins.filter isDir (builtins.attrNames entries);
+      in
+      builtins.listToAttrs (map
+        (n: { name = n; value = dir + "/${n}"; })
+        names);
 in
-{
-  rules  = readFileCategory "rules";
-  skills = readDirectoryCategory "skills";
-  agents = readFileCategory "agents";
+src: {
+  rules  = walk formats.rules  src "rules";
+  skills = walk formats.skills src "skills";
+  agents = walk formats.agents src "agents";
 }

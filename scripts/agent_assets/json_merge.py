@@ -1,18 +1,22 @@
-def deep_merge(a, b):
-    if isinstance(a, dict) and isinstance(b, dict):
-        out = dict(a)
-        for k, v in b.items():
-            if k in out:
-                out[k] = deep_merge(out[k], v)
-            else:
-                out[k] = v
-        return out
-    if isinstance(a, list) and isinstance(b, list):
-        return a + b
-    return b
+"""JSON injection: collect and merge static JSON chunks across categories.
+
+Unlike frontmatter, JSON lists are concatenated on merge (we don't own
+the file; we just want our keys present). The merged file is not
+tracked in the lock.
+"""
+
+from __future__ import annotations
+
+from .merge import deep_merge
 
 
-def chunk_present(target, chunk):
+def chunk_present(target, chunk) -> bool:
+    """Return True iff `chunk` is fully contained in `target`.
+
+    - Scalars: equality.
+    - Lists: every item of `chunk` is in `target`.
+    - Dicts: recursive containment.
+    """
     if not isinstance(chunk, dict):
         return target == chunk
     if not isinstance(target, dict):
@@ -36,12 +40,10 @@ def chunk_present(target, chunk):
     return True
 
 
-def collect(config):
-    """Walk every category's `injections.json` and deep-merge by `file` path.
-
-    Returns a dict mapping target file path -> merged content dict.
-    """
-    grouped = {}
+def collect(config: dict) -> dict:
+    """Walk every category's `injections.json` and deep-merge by `file`
+    path. Returns a dict mapping target file path -> merged content."""
+    grouped: dict = {}
     for category in ("rules", "skills", "agents"):
         cat_cfg = (config or {}).get(category) or {}
         for entry in (cat_cfg.get("injections") or {}).get("json") or []:

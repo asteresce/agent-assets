@@ -1,7 +1,22 @@
+"""Frontmatter parsing, merging and rendering.
+
+Frontmatter is YAML at the top of a Markdown file, delimited by `---`.
+Lists in frontmatter are *deduplicated* on merge (so authors can list
+tags without producing duplicates when both source and injection name
+the same one). This is intentionally different from JSON injection,
+where lists are concatenated.
+"""
+
+from __future__ import annotations
+
 import yaml
 
+from .merge import deep_merge
 
-def split_frontmatter(source):
+
+def split_frontmatter(source: str) -> tuple[dict, str]:
+    """Return `(frontmatter_dict, body)`. If no frontmatter is present,
+    returns `({}, body)`."""
     if not source.startswith("---"):
         return {}, source
     rest = source[3:]
@@ -22,29 +37,7 @@ def split_frontmatter(source):
     return parsed, body
 
 
-def deep_merge(a, b):
-    # Intentionally different from json_merge.deep_merge: frontmatter lists
-    # are deduplicated, JSON lists concat.
-    if isinstance(a, dict) and isinstance(b, dict):
-        out = dict(a)
-        for k, v in b.items():
-            if k in out:
-                out[k] = deep_merge(out[k], v)
-            else:
-                out[k] = v
-        return out
-    if isinstance(a, list) and isinstance(b, list):
-        seen = []
-        merged = []
-        for item in a + b:
-            if item not in seen:
-                seen.append(item)
-                merged.append(item)
-        return merged
-    return b
-
-
-def render(frontmatter, body):
+def render(frontmatter: dict, body: str) -> str:
     if not frontmatter:
         return body
     yaml_text = yaml.safe_dump(
@@ -57,7 +50,22 @@ def render(frontmatter, body):
     return f"---\n{yaml_text}---\n{body}"
 
 
-def apply(source, category_frontmatter, import_frontmatter):
+def apply(
+    source: str,
+    category_frontmatter: dict | None,
+    import_frontmatter: dict | None,
+) -> str:
+    """Apply category- and import-level frontmatter to `source`.
+
+    Merge order (highest priority last):
+      1. Frontmatter already in the source.
+      2. Category-level `injections.frontmatter`.
+      3. Per-import `injections.frontmatter`.
+    """
     source_fm, body = split_frontmatter(source)
-    merged = deep_merge(deep_merge({}, source_fm), deep_merge(category_frontmatter or {}, import_frontmatter or {}))
+    merged = deep_merge(
+        deep_merge({}, source_fm, list_policy="dedupe"),
+        deep_merge(category_frontmatter or {}, import_frontmatter or {}, list_policy="dedupe"),
+        list_policy="dedupe",
+    )
     return render(merged, body)

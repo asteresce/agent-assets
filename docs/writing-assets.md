@@ -23,10 +23,30 @@ nix flake check
 It is also validated by the client check command:
 
 ```bash
-nix run .#agentAssets.check
+nix run .#check
 ```
 
-## Rules schema
+The `check` command reports drift on owned files, JSON injection drift,
+and orphans. It also validates section headings for imported assets
+when the schema blob is supplied (the flake wires this up
+automatically).
+
+## Schemas
+
+The per-category heading schemas are defined in `lib/schemas/headings.nix`
+and exposed as `lib.schemas.headings`. The same source of truth is
+consumed by both `nix flake check` (which validates shared assets) and
+`nix run .#check` (which validates imported assets in the consumer's
+project).
+
+The tables below are generated from that schema by the
+`docs:tables` derivation (see `lib/gen-schema-tables.nix`).
+
+<!-- The tables below are checked-equal against `lib.schemas.headings`
+     by the `nix flake check` `schema-tables` derivation. Edit
+     `lib/schemas/headings.nix`, not this file. -->
+
+### Rules
 
 | Section | Required | Level |
 |---|---|---|
@@ -36,7 +56,7 @@ nix run .#agentAssets.check
 | Exceptions | no | 2 |
 | Rationale | no | 2 |
 
-## Skills schema
+### Skills
 
 Skills are directory-based. Each skill lives in its own directory under `skills/` and contains a `SKILLS.md` file plus any artifacts it needs.
 
@@ -48,7 +68,7 @@ Skills are directory-based. Each skill lives in its own directory under `skills/
 | Examples | no | 2 |
 | Notes | no | 2 |
 
-## Agents schema
+### Agents
 
 | Section | Required | Level |
 |---|---|---|

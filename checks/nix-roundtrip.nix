@@ -1,19 +1,10 @@
 { pkgs }:
 
-let
-  pythonWithYaml = pkgs.python3.withPackages (ps: [ ps.pyyaml ]);
-  inherit (pkgs) stdenvNoCC;
-in
-stdenvNoCC.mkDerivation {
+(pkgs.callPackage ./mkCheck.nix { }) {
   name = "agent-assets-nix-roundtrip";
   src = ../.;
 
-  nativeBuildInputs = [ pythonWithYaml ];
-
   buildPhase = ''
-    runHook preBuild
-    export PYTHONPATH=$PWD/scripts
-    export LANG=C.UTF-8
     tmp=$(mktemp -d)
     trap "rm -rf $tmp" EXIT
 
@@ -34,13 +25,13 @@ stdenvNoCC.mkDerivation {
     }}
     EOF
 
-    python3 scripts/build-overlay.py \
+    python3 -m agent_assets build \
       --config $tmp/config.json \
       --src $PWD \
       --out $tmp/emission
 
     mkdir -p $tmp/project
-    python3 scripts/sync.py \
+    python3 -m agent_assets sync \
       --project $tmp/project \
       --emission $tmp/emission \
       --config $tmp/config.json \
@@ -52,23 +43,16 @@ stdenvNoCC.mkDerivation {
     test -f $tmp/project/.opencode/skills/migration/SKILLS.md || { echo "missing SKILLS.md"; exit 1; }
     test -f $tmp/project/.opencode/agents/build.md || { echo "missing build.md"; exit 1; }
 
-    python3 scripts/sync.py \
+    python3 -m agent_assets sync \
       --project $tmp/project \
       --emission $tmp/emission \
       --config $tmp/config.json \
       --manifest ./agent-assets.lock
 
-    python3 scripts/check.py \
+    python3 -m agent_assets check \
       --project $tmp/project \
       --emission $tmp/emission \
       --config $tmp/config.json \
       --manifest ./agent-assets.lock
-
-    runHook postBuild
-  '';
-
-  installPhase = ''
-    mkdir -p $out
-    touch $out/success
   '';
 }

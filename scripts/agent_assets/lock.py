@@ -1,20 +1,34 @@
+"""Lock-file read/write.
+
+The lock file is the source of truth for which files are owned by
+agent-assets and what their on-disk state should look like. The format
+is intentionally simple so it can be diffed and reviewed.
+
+See `constants.LOCK_VERSION` for the current schema version.
+"""
+
+from __future__ import annotations
+
 import json
 import os
 
+from .constants import LOCK_VERSION
+from .fsutil import write_text
 
-LOCK_VERSION = 5
 
-
-def entry(category, name, path, hash_value):
+def entry(*, category: str, name: str, path: str, hash: str) -> dict:
     return {
         "category": category,
         "name": name,
         "path": path,
-        "hash": hash_value,
+        "hash": hash,
     }
 
 
-def read_lock(path):
+def read_lock(path: str) -> list | None:
+    """Read the lock at `path`. Returns `None` if the file is missing,
+    unreadable, the wrong version, or malformed. Returning `None` is
+    the signal callers use to "start fresh" — see `sync.sync`."""
     if not os.path.exists(path):
         return None
     try:
@@ -32,9 +46,6 @@ def read_lock(path):
     return entries
 
 
-def write_lock(path, entries):
+def write_lock(path: str, entries: list) -> None:
     payload = {"version": LOCK_VERSION, "entries": entries}
-    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(payload, f, indent=2, sort_keys=True, ensure_ascii=False)
-        f.write("\n")
+    write_text(path, json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False) + "\n")

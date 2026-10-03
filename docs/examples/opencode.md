@@ -90,7 +90,7 @@ This:
 - Skips owned files whose on-disk hash already matches `./agent-assets.lock`.
 - Refreshes `./agent-assets.lock`.
 
-Custom local files under managed roots (not in any lock) are preserved. Files listed in a previous lock but absent from the current emission are deleted.
+See [Sync behaviour](../../concepts.md#sync-behaviour) for the canonical description of how sync handles missing files, drift, and orphans.
 
 Skills are directory-based: the imported skill directory is copied as-is, and `SKILLS.md` is validated and may receive frontmatter injections. The skill's directory hash captures the contents of all files we manage.
 
@@ -100,7 +100,7 @@ Skills are directory-based: the imported skill directory is copied as-is, and `S
 nix run .#check
 ```
 
-Reports any owned file or skill dir whose hash differs from `./agent-assets.lock`, any JSON injection target missing our chunk's keys, and any orphans under managed roots. Exits non-zero on any report.
+Reports any owned file or skill dir whose hash differs from `./agent-assets.lock`, any JSON injection target missing our chunk's keys, any orphans under managed roots, and any section-heading violations on imported assets. Exits non-zero on any report. See [Check behaviour](../../concepts.md#check-behaviour) for the canonical description.
 
 ## Result
 

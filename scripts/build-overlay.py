@@ -1,31 +1,11 @@
 #!/usr/bin/env python3
-import argparse
-import json
+"""Thin wrapper to call `python -m agent_assets build`."""
 import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from agent_assets import overlay
-
-
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--config", required=True, help="path to resolved config JSON")
-    parser.add_argument("--src", required=True, help="path to the agent-assets source tree")
-    parser.add_argument("--out", required=True, help="output directory")
-    args = parser.parse_args()
-
-    with open(args.config, "r", encoding="utf-8") as f:
-        config = json.load(f)
-
-    result = overlay.build(config, src_dir=args.src, out_dir=args.out)
-
-    print(json.dumps({
-        "entries": result["entries"],
-        "lock_path": result["lock_path"],
-    }))
-
+from agent_assets.__main__ import main
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main(["build", *sys.argv[1:]]))
