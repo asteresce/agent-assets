@@ -7,22 +7,23 @@
     let
       headings = import ./lib/schemas/headings.nix;
       formats = import ./lib/schemas/formats.nix;
+      assets = import ./lib/assets.nix;
+      injections = import ./lib/injections.nix;
+      mkAgentAssets = import ./lib/mkAgentAssets.nix;
+      flakeModule = ./flake-module.nix;
       supportedSystems = [ "x86_64-linux" "aarch64-linux" "aarch64-darwin" "x86_64-darwin" ];
       forAllSystems = nixpkgs.lib.genAttrs supportedSystems;
     in
     {
-      lib.schemas.headings = headings;
-      lib.schemas.formats = formats;
+      flakeModules.default = flakeModule;
 
-      # Intended public API (documented in docs/api.md):
-      #   - flakeModules.default          — flake-parts module
-      #   - lib.mkAgentAssets             — pure helper for non-flake-parts users
-      #   - lib.assets.<category>.<name>  — registry of shared asset source paths
-      #   - lib.injections.*              — internal injection implementations
-      #   - lib.schemas.headings          — section heading schemas
-      #   - lib.schemas.formats           — asset format per category (file or directory)
-      #   - apps.agentAssets.sync         — apply emitted tree to project
-      #   - apps.agentAssets.check        — report drift and validate headings
+      lib = {
+        inherit headings formats assets injections mkAgentAssets;
+        scripts = {
+          sync = import ./scripts/sync.nix;
+          check = import ./scripts/check.nix;
+        };
+      };
 
       checks = forAllSystems (system:
         let pkgs = nixpkgs.legacyPackages.${system}; in
@@ -39,7 +40,7 @@
             '';
             installPhase = "mkdir -p $out";
           };
-        }
-      );
+          selfTest = pkgs.callPackage ./checks/self-test.nix { };
+        });
     };
 }

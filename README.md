@@ -133,4 +133,4 @@ AGENTS.md          # contributor guidance for this repo
 
 ## Status
 
-This documentation describes the intended public API. The Nix module implementation is being developed alongside these docs.
+The documented public API is implemented. `nix flake check` runs the headings check and a 23-scenario self-test that exercises sync/check/JSON injection/idempotency/orphan-removal/custom-file preservation.
