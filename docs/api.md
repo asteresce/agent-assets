@@ -2,7 +2,9 @@
 
 Behavioural semantics (ownership, orphans, drift, idempotence) are described
 once, in [README — How it behaves](../README.md#how-it-behaves). This page is
-the data and interface reference.
+the data and interface reference: what the keys and flags *mean*. The values
+are not stated here — [reference.generated.md](reference.generated.md) is
+generated from [`spec.json`](../spec.json) and is the only place they appear.
 
 ## Config
 
@@ -39,11 +41,11 @@ Category names are not a fixed set — see [Format inference](#format-inference)
 
 ### Category
 
-| Key | Type | Default | Meaning |
-|---|---|---|---|
-| `root` | string | `./.agent-assets/<category>` | output directory, project-relative |
-| `imports` | array | `[]` | assets to emit |
-| `injections` | object | `{}` | category-wide transformations |
+| Key | Type | Meaning |
+|---|---|---|
+| `root` | string | output directory, project-relative; defaults to `defaults.rootPrefix` + the category name |
+| `imports` | array | assets to emit; defaults to none |
+| `injections` | object | category-wide transformations; defaults to none |
 
 ### Import
 
@@ -65,12 +67,14 @@ For each import the engine looks for `--src/<category>/<name>.md` and then for
   `<root>/<destination>/<rename>.md`.
 - `<name>/` found — a **directory asset** (a skill), emitted to
   `<root>/<destination>/<rename>/`. Every file in the source is copied;
-  `SKILL.md` is the entry file and is the one that receives frontmatter, the
+  `defaults.skillEntry` is the entry file and is the one that receives
+  frontmatter, the
   rest are artifacts and are copied verbatim.
 - neither — the run fails naming both paths it tried.
 
 A source that is neither is an error, so typos in `name` fail loudly instead
-of emitting nothing. The directory is a skill directory; `SKILL.md` is the
+of emitting nothing. The directory is a skill directory; its entry file
+(`defaults.skillEntry`) is the
 one stated format convention of the registry.
 
 ## Injections
@@ -106,7 +110,7 @@ team: platform
 
 from `category = { "team": "platform", "owner": "default" }` and
 `import = { "owner": "sec" }`. Applied to file assets and to a directory
-asset's `SKILL.md`; other
+asset's entry file; other
 files in a directory asset are copied verbatim.
 
 ### `json`
@@ -139,7 +143,8 @@ change the file.
 
 ## Manifest
 
-`./agent-assets.lock` (path configurable). Written by `sync`, read by `check`.
+The manifest lives at `defaults.manifest` (path configurable). Written by
+`sync`, read by `check`.
 **One entry per imported asset** — a file asset's emitted file, a directory
 asset's emitted directory:
 
@@ -164,16 +169,20 @@ agent-assets sync
 agent-assets check
 ```
 
-| Flag | Default | Meaning |
-|---|---|---|
-| `--config FILE` | `./agent-assets.json` | config path |
-| `--src DIR` | the checkout containing the script | registry root |
-| `--project DIR` | `.` | project root to reconcile |
-| `--manifest PATH` | `./agent-assets.lock` | manifest, relative to `--project` |
-| `--out DIR` | — | destination tree (`render` only) |
+| Flag | Meaning |
+|---|---|
+| `--config FILE` | config path (default `defaults.config`) |
+| `--src DIR` | registry root (default: the checkout containing the script) |
+| `--project DIR` | project root to reconcile (default `defaults.project`) |
+| `--manifest PATH` | manifest, relative to `--project` (default `defaults.manifest`) |
+| `--out DIR` | destination tree (`render` only) |
+
+Default values are in [reference.generated.md](reference.generated.md).
 
 Output tokens: `check` prints `MISSING`, `DRIFT`, `EXTRA`, `ORPHAN`, `INJECT`
-(`EXTRA` is a file inside a managed asset directory that was not rendered);
+(`EXTRA` is a file inside a managed asset directory that was not rendered;
+`DRIFT` also covers a path holding the wrong kind of thing — a symlink, or a
+directory where a file belongs);
 `sync` prints `WRITE`, `UPDATE`, `REMOVE`, `MERGE`. Both are silent when there
 is nothing to say. `render` writes the expected tree and touches nothing else.
 
@@ -186,7 +195,6 @@ is nothing to say. `render` writes the expected tree and touches nothing else.
   agentAssets = {
     enable = true;
     config = { rules = { root = "./.opencode/rules"; imports = [ "security" ]; }; };
-    manifest = "./agent-assets.lock";
   };
 }
 ```
@@ -194,11 +202,11 @@ is nothing to say. `render` writes the expected tree and touches nothing else.
 Options live at the **module root** (sibling of `perSystem`), not inside
 `perSystem`:
 
-| Option | Type | Default | Meaning |
-|---|---|---|---|
-| `enable` | bool | `false` | emit the apps; when false nothing is emitted |
-| `config` | attrs or path | `{}` | attrs are serialized to JSON; a path must point at a JSON file |
-| `manifest` | str | `"./agent-assets.lock"` | passed through as `--manifest` |
+| Option | Type | Meaning |
+|---|---|---|
+| `enable` | bool | emit the apps; when false nothing is emitted (default `false`) |
+| `config` | attrs or path | attrs are serialized to JSON; a path must point at a JSON file (default `{}`) |
+| `manifest` | str | passed through as `--manifest` (default `defaults.manifest`) |
 
 With `enable = true` and a non-empty `config`, the flake gains `apps`:
 

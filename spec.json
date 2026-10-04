@@ -1,0 +1,15 @@
+{
+  "name": "agent-assets",
+  "defaults": {
+    "config": "./agent-assets.json",
+    "manifest": "./agent-assets.lock",
+    "project": ".",
+    "rootPrefix": "./.agent-assets/",
+    "skillEntry": "SKILL.md"
+  },
+  "headings": {
+    "rules": ["Summary", "Guidelines"],
+    "skills": ["Description", "Steps"],
+    "agents": ["Role", "Instructions"]
+  }
+}

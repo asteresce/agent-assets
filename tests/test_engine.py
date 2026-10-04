@@ -16,6 +16,20 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 ENGINE = REPO / "bin" / "agent-assets"
 
+# One declaration for every default; see spec.json.
+SPEC = json.loads((REPO / "spec.json").read_text())
+DEFAULTS = SPEC["defaults"]
+SKILL_ENTRY = DEFAULTS["skillEntry"]
+CONFIG_NAME = Path(DEFAULTS["config"]).name
+MANIFEST = DEFAULTS["manifest"]
+MANIFEST_NAME = Path(MANIFEST).name
+DEFAULT_ROOT = str(Path(DEFAULTS["rootPrefix"]))
+
+
+def skill(dirname):
+    """The entry file of a directory asset under the default skills root."""
+    return f".opencode/skills/{dirname}/{SKILL_ENTRY}"
+
 SECURITY = "## Summary\n\nKeep secrets safe.\n"
 CODE_STYLE = "## Summary\n\nPrefer clarity.\n"
 SKILLS_MD = "## Description\n\nMigrate things.\n"
@@ -34,17 +48,17 @@ class EngineTest(unittest.TestCase):
         self.src = self.tmp / "registry"
         self.project = self.tmp / "project"
         self.project.mkdir()
-        self.config = self.tmp / "agent-assets.json"
+        self.config = self.tmp / CONFIG_NAME
 
         rules = self.src / "rules"
         rules.mkdir(parents=True)
         (rules / "security.md").write_text(SECURITY)
         (rules / "code-style.md").write_text(CODE_STYLE)
 
-        skill = self.src / "skills" / "migration"
-        skill.mkdir(parents=True)
-        (skill / "SKILL.md").write_text(SKILLS_MD)
-        (skill / "checklist.md").write_text(CHECKLIST)
+        skill_dir = self.src / "skills" / "migration"
+        skill_dir.mkdir(parents=True)
+        (skill_dir / SKILL_ENTRY).write_text(SKILLS_MD)
+        (skill_dir / "checklist.md").write_text(CHECKLIST)
 
         agents = self.src / "agents"
         agents.mkdir(parents=True)
@@ -132,7 +146,7 @@ class EngineTest(unittest.TestCase):
         p.write_text(text)
 
     def manifest(self):
-        return json.loads(self.read("agent-assets.lock"))
+        return json.loads(self.read(MANIFEST))
 
     def manifest_paths(self):
         return sorted(e["path"] for e in self.manifest())
@@ -154,7 +168,7 @@ class EngineTest(unittest.TestCase):
         self.sync()
         self.assertEqual(self.read(".opencode/rules/security.md"), RULES_FM + SECURITY)
         self.assertEqual(self.read(".opencode/rules/base/style.md"), STYLE_FM + CODE_STYLE)
-        self.assertEqual(self.read(".opencode/skills/migration/SKILL.md"), SKILLS_MD)
+        self.assertEqual(self.read(skill("migration")), SKILLS_MD)
         self.assertEqual(self.read(".opencode/skills/migration/checklist.md"), CHECKLIST)
         self.assertEqual(self.read(".opencode/agents/build.md"), BUILD)
 
@@ -204,24 +218,24 @@ class EngineTest(unittest.TestCase):
     def test_unowned_files_are_never_touched(self):
         self.sync()
         self.write(".opencode/rules/custom.md", "mine\n")
-        self.write(".opencode/skills/my-own/SKILL.md", "my own skill\n")
+        self.write(skill("my-own"), "my own skill\n")
         self.sync()
         self.assertEqual(self.read(".opencode/rules/custom.md"), "mine\n")
-        self.assertEqual(self.read(".opencode/skills/my-own/SKILL.md"), "my own skill\n")
+        self.assertEqual(self.read(skill("my-own")), "my own skill\n")
         self.assertNotIn(".opencode/rules/custom.md", self.manifest_paths())
         self.assertNotIn(".opencode/skills/my-own", self.manifest_paths())
 
     def test_custom_assets_survive_dropping_an_import(self):
         self.sync()
         self.write(".opencode/rules/custom.md", "mine\n")
-        self.write(".opencode/skills/my-own/SKILL.md", "my own skill\n")
+        self.write(skill("my-own"), "my own skill\n")
         config = self.base_config()
         config["skills"]["imports"] = []
         self.write_config(config)
         self.sync()
         self.assertFalse(self.path(".opencode/skills/migration").exists())
         self.assertEqual(self.read(".opencode/rules/custom.md"), "mine\n")
-        self.assertEqual(self.read(".opencode/skills/my-own/SKILL.md"), "my own skill\n")
+        self.assertEqual(self.read(skill("my-own")), "my own skill\n")
 
     # ------------------------------------------------------------- orphans
 
@@ -239,7 +253,7 @@ class EngineTest(unittest.TestCase):
         proc = self.sync()
         self.assertEqual(proc.stdout, "REMOVE .opencode/skills/migration/checklist.md\n")
         self.assertFalse(self.path(".opencode/skills/migration/checklist.md").exists())
-        self.assertTrue(self.path(".opencode/skills/migration/SKILL.md").exists())
+        self.assertTrue(self.path(skill("migration")).exists())
 
     def test_asset_contents_are_immutable(self):
         self.sync()
@@ -267,7 +281,7 @@ class EngineTest(unittest.TestCase):
     def test_missing_manifest_syncs_without_deleting(self):
         self.sync()
         self.write(".opencode/rules/security.md", "do not delete me\n")
-        self.path("agent-assets.lock").unlink()
+        self.path(MANIFEST).unlink()
         proc = self.sync()
         self.assertNotIn("REMOVE", proc.stdout)
         # the owned file is still rewritten from the registry
@@ -275,7 +289,7 @@ class EngineTest(unittest.TestCase):
 
     def test_unreadable_manifest_skips_orphan_removal(self):
         self.sync()
-        self.path("agent-assets.lock").write_text("{ not json")
+        self.path(MANIFEST).write_text("{ not json")
         proc = self.sync()
         self.assertNotIn("REMOVE", proc.stdout)
         self.assertIn("unreadable manifest", proc.stderr)
@@ -310,7 +324,7 @@ class EngineTest(unittest.TestCase):
     def test_no_frontmatter_block_when_none_configured(self):
         self.sync()
         self.assertEqual(
-            self.read(".opencode/skills/migration/SKILL.md"), SKILLS_MD
+            self.read(skill("migration")), SKILLS_MD
         )
         self.assertEqual(self.read(".opencode/agents/build.md"), BUILD)
 
@@ -319,7 +333,7 @@ class EngineTest(unittest.TestCase):
         config["skills"]["injections"] = {"frontmatter": {"scope": "skills"}}
         self.write_config(config)
         self.sync()
-        head, body = self.frontmatter_of(self.read(".opencode/skills/migration/SKILL.md"))
+        head, body = self.frontmatter_of(self.read(skill("migration")))
         self.assertEqual(head, "scope: skills\n")
         self.assertEqual(body, SKILLS_MD)
         self.assertEqual(self.read(".opencode/skills/migration/checklist.md"), CHECKLIST)
@@ -448,7 +462,7 @@ class EngineTest(unittest.TestCase):
             (out / ".opencode/rules/security.md").read_text(), RULES_FM + SECURITY
         )
         self.assertFalse(self.path(".opencode").exists())
-        self.assertFalse(self.path("agent-assets.lock").exists())
+        self.assertFalse(self.path(MANIFEST).exists())
 
     def test_render_matches_sync_output(self):
         out = self.tmp / "out"
@@ -470,7 +484,7 @@ class EngineTest(unittest.TestCase):
         config["skills"]["imports"] = [{"name": "migration", "rename": "db-migration"}]
         self.write_config(config)
         self.sync()
-        self.assertTrue(self.path(".opencode/skills/db-migration/SKILL.md").exists())
+        self.assertTrue(self.path(skill("db-migration")).exists())
         self.assertFalse(self.path(".opencode/skills/migration").exists())
         self.assertIn(".opencode/skills/db-migration", self.manifest_paths())
 
@@ -480,7 +494,7 @@ class EngineTest(unittest.TestCase):
         config = {"rules": {"imports": ["security"]}}
         self.write_config(config)
         self.sync()
-        self.assertTrue(self.path(".agent-assets/rules/security.md").exists())
+        self.assertTrue(self.path(f"{DEFAULT_ROOT}/rules/security.md").exists())
 
     def test_string_shorthand_import(self):
         config = {"rules": {"root": "./r", "imports": ["security"]}}
@@ -500,7 +514,7 @@ class EngineTest(unittest.TestCase):
         }
         self.write_config(config)
         proc = self.sync(expect=1)
-        self.assertIn("must not contain '..'", proc.stderr)
+        self.assertIn("must not contain", proc.stderr)
 
     def test_absolute_root_is_rejected(self):
         config = {"rules": {"root": "/etc", "imports": ["security"]}}
@@ -527,6 +541,123 @@ class EngineTest(unittest.TestCase):
         self.assertEqual(proc.stdout, "")
         self.assertEqual(self.manifest(), [])
         self.check()
+
+    # ------------------------------------------------------ symlink safety
+
+    def test_dangling_symlink_at_file_path_is_not_written_through(self):
+        self.path(".opencode/rules").mkdir(parents=True)
+        (self.path(".opencode/rules/security.md")).symlink_to(self.tmp / "ghost.md")
+        proc = self.sync(expect=1)
+        self.assertIn("refusing to replace unowned", proc.stderr)
+        self.assertFalse((self.tmp / "ghost.md").exists())
+        # a refusal is a refusal: nothing at all is written
+        self.assertFalse(self.path("opencode.json").exists())
+        self.assertFalse(self.path(MANIFEST).exists())
+
+    def test_symlink_to_file_at_file_path_is_not_written_through(self):
+        outside = self.tmp / "outside.md"
+        outside.write_text("secret\n")
+        self.path(".opencode/rules").mkdir(parents=True)
+        (self.path(".opencode/rules/security.md")).symlink_to(outside)
+        proc = self.sync(expect=1)
+        self.assertIn("refusing to replace unowned", proc.stderr)
+        self.assertEqual(outside.read_text(), "secret\n")
+
+    def test_owned_symlink_at_file_path_is_replaced_not_followed(self):
+        self.sync()
+        outside = self.tmp / "outside.md"
+        outside.write_text("secret\n")
+        target = self.path(".opencode/rules/security.md")
+        target.unlink()
+        target.symlink_to(outside)
+        self.sync()
+        self.assertFalse(target.is_symlink())
+        self.assertEqual(target.read_text(), RULES_FM + SECURITY)
+        self.assertEqual(outside.read_text(), "secret\n")
+
+    def test_symlink_at_directory_asset_path_is_not_followed(self):
+        outside = self.tmp / "outside-skill"
+        outside.mkdir()
+        (outside / "keep.md").write_text("keep me\n")
+        self.path(".opencode/skills").mkdir(parents=True)
+        (self.path(".opencode/skills/migration")).symlink_to(outside)
+        proc = self.sync(expect=1)
+        self.assertIn("refusing to replace unowned", proc.stderr)
+        self.assertEqual((outside / "keep.md").read_text(), "keep me\n")
+        self.assertFalse((outside / SKILL_ENTRY).exists())
+
+    def test_owned_symlink_at_directory_asset_is_replaced_referent_intact(self):
+        self.sync()
+        outside = self.tmp / "outside-skill"
+        outside.mkdir()
+        (outside / "keep.md").write_text("keep me\n")
+        target = self.path(".opencode/skills/migration")
+        shutil.rmtree(target)
+        target.symlink_to(outside)
+        self.sync()
+        self.assertFalse(target.is_symlink())
+        self.assertTrue((target / SKILL_ENTRY).is_file())
+        self.assertTrue((target / "checklist.md").is_file())
+        self.assertEqual((outside / "keep.md").read_text(), "keep me\n")
+        self.assertFalse((outside / SKILL_ENTRY).exists())
+
+    def test_check_reports_symlink_at_file_path_as_drift(self):
+        self.sync()
+        outside = self.tmp / "outside.md"
+        outside.write_text(RULES_FM + SECURITY)  # identical bytes
+        target = self.path(".opencode/rules/security.md")
+        target.unlink()
+        target.symlink_to(outside)
+        proc = self.check(expect=1)
+        self.assertEqual(
+            proc.stdout, "DRIFT .opencode/rules/security.md (from rules/security)\n"
+        )
+
+    def test_check_reports_symlink_at_directory_asset_as_drift(self):
+        self.sync()
+        outside = self.tmp / "outside-skill"
+        shutil.copytree(self.path(".opencode/skills/migration"), outside)
+        target = self.path(".opencode/skills/migration")
+        shutil.rmtree(target)
+        target.symlink_to(outside)
+        proc = self.check(expect=1)
+        self.assertIn("DRIFT .opencode/skills/migration (from skills/migration)\n", proc.stdout)
+
+    # --------------------------------------------------------- rejections
+
+    def test_dot_destination_is_rejected(self):
+        config = self.base_config()
+        config["rules"]["imports"] = [{"name": "security", "destination": "."}]
+        self.write_config(config)
+        proc = self.sync(expect=1)
+        self.assertIn("must not contain", proc.stderr)
+
+    def test_trailing_dot_destination_is_rejected(self):
+        config = self.base_config()
+        config["rules"]["imports"] = [{"name": "security", "destination": "base/."}]
+        self.write_config(config)
+        proc = self.sync(expect=1)
+        self.assertIn("must not contain", proc.stderr)
+
+    def test_control_characters_in_config_fields_are_rejected(self):
+        config = self.base_config()
+        config["rules"]["root"] = "./.opencode/rules\x1f/evil"
+        self.write_config(config)
+        proc = self.sync(expect=1)
+        self.assertIn("control characters", proc.stderr)
+
+    def test_render_rejects_malformed_json_injection(self):
+        config = self.base_config()
+        config["rules"]["injections"]["json"] = [{"content": {}}]
+        self.write_config(config)
+        proc = self.run_engine("render", "--out", str(self.tmp / "out"), expect=1)
+        self.assertIn("injections.json", proc.stderr)
+
+    def test_manifest_path_is_normalized(self):
+        self.run_engine("sync", "--manifest", f"./{MANIFEST_NAME}")
+        first = self.manifest()
+        self.run_engine("sync", "--manifest", f"{MANIFEST_NAME}/")
+        self.assertEqual(self.manifest(), first)
 
 
 if __name__ == "__main__":

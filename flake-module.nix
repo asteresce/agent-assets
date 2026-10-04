@@ -1,12 +1,17 @@
 { lib, config, ... }:
 
 let
+  # One declaration for every default and label; the engine and the docs
+  # generator read the same file. See spec.json.
+  spec = builtins.fromJSON (builtins.readFile ./spec.json);
+
   cfg = config.agentAssets;
   isActive = cfg.enable && cfg.config != { };
 
   # The registry this flake ships. The standalone engine defaults --src to
   # its own checkout; the apps pin it to this store path, which is the
-  # consumer's flake.lock-pinned revision of this flake.
+  # consumer's flake.lock-pinned revision of this flake. The engine is run
+  # from here too, so its spec.json lookup resolves inside the store.
   registry = ./.;
 
   makeProgram = pkgs: name:
@@ -14,9 +19,9 @@ let
       configJson =
         if builtins.isPath cfg.config
         then "${cfg.config}"
-        else "${pkgs.writeText "agent-assets-config.json" (builtins.toJSON cfg.config)}";
+        else "${pkgs.writeText (builtins.baseNameOf spec.defaults.config) (builtins.toJSON cfg.config)}";
       app = pkgs.writeShellApplication {
-        name = "agent-assets-${name}";
+        name = "${spec.name}-${name}";
         runtimeInputs = [
           pkgs.bash
           pkgs.coreutils
@@ -27,7 +32,7 @@ let
           pkgs.yq-go
         ];
         text = ''
-          exec ${pkgs.bash}/bin/bash ${./bin/agent-assets} ${lib.escapeShellArg name} \
+          exec ${pkgs.bash}/bin/bash ${registry}/bin/agent-assets ${lib.escapeShellArg name} \
             --config ${lib.escapeShellArg configJson} \
             --src ${lib.escapeShellArg "${registry}"} \
             --manifest ${lib.escapeShellArg cfg.manifest} \
@@ -36,7 +41,7 @@ let
         '';
       };
     in
-    "${app}/bin/agent-assets-${name}";
+    "${app}/bin/${spec.name}-${name}";
 in
 {
   options.agentAssets = {
@@ -59,10 +64,11 @@ in
 
     manifest = lib.mkOption {
       type = lib.types.str;
-      default = "./agent-assets.lock";
+      default = spec.defaults.manifest;
       description = ''
         Path to the ownership manifest, relative to the project root.
-        Sync writes it, check reads it.
+        Sync writes it, check reads it. Defaults to
+        `${spec.defaults.manifest}`, the engine's own default.
       '';
     };
   };

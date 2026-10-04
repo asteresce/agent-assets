@@ -5,6 +5,8 @@
 
   outputs = { self, nixpkgs }:
     let
+      # One declaration for every default and label; see spec.json.
+      spec = builtins.fromJSON (builtins.readFile ./spec.json);
       supportedSystems = [ "x86_64-linux" "aarch64-linux" "aarch64-darwin" "x86_64-darwin" ];
       forAllSystems = nixpkgs.lib.genAttrs supportedSystems;
     in
@@ -15,8 +17,8 @@
       checks = forAllSystems (system:
         let pkgs = nixpkgs.legacyPackages.${system}; in
         {
-          # Integration suite for bin/agent-assets.
-          selfTest = pkgs.runCommand "agent-assets-self-test"
+          # Integration suite for bin/agent-assets plus registry conformance.
+          selfTest = pkgs.runCommand "${spec.name}-self-test"
             {
               nativeBuildInputs = [
                 pkgs.bash
@@ -37,11 +39,24 @@
               mkdir -p $out
             '';
 
-          shellcheck = pkgs.runCommand "agent-assets-shellcheck"
+          shellcheck = pkgs.runCommand "${spec.name}-shellcheck"
             {
               nativeBuildInputs = [ pkgs.shellcheck ];
             } ''
               shellcheck ${./bin/agent-assets}
+              mkdir -p $out
+            '';
+
+          # docs/reference.generated.md must match spec.json.
+          reference = pkgs.runCommand "${spec.name}-reference"
+            {
+              nativeBuildInputs = [ pkgs.python3 ];
+            } ''
+              export LANG=C.UTF-8
+              cp -r ${./.} src
+              chmod -R u+w src
+              cd src
+              python3 scripts/gen-reference.py --check
               mkdir -p $out
             '';
         });

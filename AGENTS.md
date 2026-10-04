@@ -11,15 +11,30 @@ agent is, and how it discovers files, is the consumer's business.
 - **Import** — one config entry selecting a registry asset to emit.
 - **Injection** — a data-driven transform applied at emit time
   (`frontmatter`, `json`).
-- **Manifest** — `./agent-assets.lock`; the paths a sync owns.
+- **Manifest** — `defaults.manifest`; the paths a sync owns.
+
+## Declared values
+
+`spec.json` is the single source of truth for the package name, the defaults
+and the per-category section schema. The engine, the flake module, the tests
+and the docs generator all read it — never restate a value from it in code or
+prose; refer to the key instead (`defaults.manifest`, `defaults.skillEntry`, …).
+
+Generated documentation is always named `<something>.generated.md` and is
+produced by `scripts/gen-reference.py` from `spec.json`. Hand-written pages
+link to it; they never carry generated tables. Regenerate with
+`python3 scripts/gen-reference.py`, and `nix flake check` fails if a
+`*.generated.md` file is out of date.
 
 ## Adding an asset
 
 1. Drop it in the registry: `rules/<name>.md`, `agents/<name>.md`, or
-   `skills/<name>/` with a `SKILL.md` entry file plus artifacts.
+   `skills/<name>/` with its entry file (`defaults.skillEntry`) plus artifacts.
 2. Add a line to that category's `README.md`.
 3. Keep the content provider-neutral: no frontmatter, no agent names, no
    references to where files land. All of that is injected by consumers.
+4. Keep the sections in the order `spec.json` declares for the category —
+   `nix flake check` enforces it.
 
 Adding a **category** is a new registry directory plus the matching config key
 in consumers — the engine infers file-vs-directory from the source layout and

@@ -58,9 +58,10 @@ EOF
 path/to/agent-assets/bin/agent-assets sync
 ```
 
-Requires `bash`, `jq` (>= 1.6), `yq` (mikefarah, v4) and standard coreutils.
-`--src` defaults to the checkout the script lives in, `--config` to
-`./agent-assets.json`, `--project` to `.`.
+Requires `bash`, `jq` (>= 1.6), `yq` (mikefarah, v4), `awk` and standard
+coreutils.
+`--src` defaults to the checkout the script lives in; the remaining defaults
+are in [the reference](docs/reference.generated.md).
 
 ## How it behaves
 
@@ -68,10 +69,10 @@ Requires `bash`, `jq` (>= 1.6), `yq` (mikefarah, v4) and standard coreutils.
 project. `check` performs the same comparison and only reports. This is the
 canonical description of both.
 
-- **Ownership.** `sync` records each imported asset in `./agent-assets.lock`
-  (JSON, one row per import, paths only — no hashes): a file asset is its
-  emitted file, a directory asset is its emitted directory. Only those paths
-  are ever overwritten or deleted.
+- **Ownership.** `sync` records each imported asset in the manifest
+  (`defaults.manifest`; JSON, one row per import, paths only — no hashes): a
+  file asset is its emitted file, a directory asset its emitted directory.
+  Only those paths are ever overwritten or deleted.
 - **Shared roots.** The category `root` is a shared namespace. Anything under
   it that no import claims — a custom rule, a whole custom skill directory —
   is yours and is never touched, including after neighbouring imports change.
@@ -84,7 +85,10 @@ canonical description of both.
   instead of guessing.
 - **Drift.** A rendered file that differs on disk is rewritten by `sync` and
   reported as `DRIFT` by `check`. Managed files are outputs, not shared state —
-  there is no three-way merge.
+  there is no three-way merge. A path holding the wrong kind of thing (a
+  symlink, a directory where a file belongs) is `DRIFT` as well; `sync`
+  replaces it only when the manifest says the path is ours, and otherwise
+  refuses the run before writing anything.
 - **Frontmatter** (`injections.frontmatter`) *replaces* any frontmatter the
   source carries. The category map and the per-import map are combined with
   the per-import key winning, then emitted as YAML with sorted keys.
@@ -101,13 +105,14 @@ canonical description of both.
 | Category | Source | Emitted |
 |---|---|---|
 | `rules/` | `rules/<name>.md` | one Markdown file |
-| `skills/` | `skills/<name>/` (entry file `SKILL.md` + artifacts) | a directory |
+| `skills/` | `skills/<name>/` (entry file + artifacts) | a directory |
 | `agents/` | `agents/<name>.md` | one Markdown file |
 
 Sources are provider-neutral: no frontmatter, no agent-specific framing. All
-frontmatter comes from the consumer's config. In a directory asset, `SKILL.md`
-is the entry file that receives frontmatter; every other file is an artifact
-and is copied verbatim.
+frontmatter comes from the consumer's config. In a directory asset, one file is
+the entry file (`defaults.skillEntry`) and receives frontmatter; every other
+file is an artifact and is copied verbatim. Each category fixes the sections
+its assets carry — see [the reference](docs/reference.generated.md).
 
 Adding an asset is a Markdown file plus a line in the category `README.md`.
 Adding a category is a new directory in the registry plus the matching config
