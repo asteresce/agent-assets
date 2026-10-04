@@ -5,7 +5,8 @@ puts them into a project tree: declarative, idempotent, and checkable in CI.
 
 ## What you get
 
-- `rules/`, `skills/`, `agents/` — a registry of shared Markdown assets.
+- `assets/` — a registry of shared Markdown assets, one directory per
+  category (`rules/`, `skills/`, `agents/`).
 - `bin/agent-assets` — a bash engine with `render`, `sync` and `check`.
 - A flake-parts module wiring `nix run .#sync` and `nix run .#check`.
 
@@ -104,9 +105,9 @@ canonical description of both.
 
 | Category | Source | Emitted |
 |---|---|---|
-| `rules/` | `rules/<name>.md` | one Markdown file |
-| `skills/` | `skills/<name>/` (entry file + artifacts) | a directory |
-| `agents/` | `agents/<name>.md` | one Markdown file |
+| `rules/` | `<src>/rules/<name>.md` | one Markdown file |
+| `skills/` | `<src>/skills/<name>/` (entry file + artifacts) | a directory |
+| `agents/` | `<src>/agents/<name>.md` | one Markdown file |
 
 Sources are provider-neutral: no frontmatter, no agent-specific framing. All
 frontmatter comes from the consumer's config. In a directory asset, one file is
@@ -149,10 +150,10 @@ they stay plain Markdown.
 
 ```
 bin/agent-assets     # the engine (bash + jq + yq)
-rules/               # provider-neutral shared rules
-skills/              # provider-neutral shared skills
-agents/              # provider-neutral shared agent prompts
+spec.json            # declared defaults and section schemas
+assets/              # the shared registry: rules/, skills/, agents/
 tests/               # integration tests for the engine
+scripts/             # repo tooling (the reference generator)
 docs/                # reference and examples
 flake.nix            # flakeModules.default + checks
 flake-module.nix     # the consumer-facing module

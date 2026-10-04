@@ -172,7 +172,7 @@ agent-assets check
 | Flag | Meaning |
 |---|---|
 | `--config FILE` | config path (default `defaults.config`) |
-| `--src DIR` | registry root (default: the checkout containing the script) |
+| `--src DIR` | asset registry root (default: this package's `defaults.src`) |
 | `--project DIR` | project root to reconcile (default `defaults.project`) |
 | `--manifest PATH` | manifest, relative to `--project` (default `defaults.manifest`) |
 | `--out DIR` | destination tree (`render` only) |

@@ -9,6 +9,7 @@ Generated from [`spec.json`](../spec.json). To update, run `python3 scripts/gen-
 | Key | Value |
 |---|---|
 | `name` | `agent-assets` |
+| `defaults.src` | `assets` |
 | `defaults.config` | `./agent-assets.json` |
 | `defaults.manifest` | `./agent-assets.lock` |
 | `defaults.project` | `.` |

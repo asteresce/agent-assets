@@ -29,6 +29,7 @@ if [ ! -f "$SPEC" ]; then
   exit 1
 fi
 DEFAULT_NAME=$(jq -er .name "$SPEC")
+DEFAULT_SRC=$(jq -er .defaults.src "$SPEC")
 DEFAULT_CONFIG=$(jq -er .defaults.config "$SPEC")
 DEFAULT_MANIFEST=$(jq -er .defaults.manifest "$SPEC")
 DEFAULT_PROJECT=$(jq -er .defaults.project "$SPEC")
@@ -46,7 +47,7 @@ Commands:
 
 Options:
   --config FILE    JSON config (default $DEFAULT_CONFIG)
-  --src DIR        Asset registry root (default: this checkout)
+  --src DIR        Asset registry root (default: the one shipped here)
   --project DIR    Project root (default $DEFAULT_PROJECT)
   --manifest PATH  Manifest path relative to --project
                    (default $DEFAULT_MANIFEST)
@@ -623,7 +624,7 @@ main() {
   if [ -z "$src" ]; then
     local here
     here=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
-    src=$(dirname "$here")
+    src="$here/../$DEFAULT_SRC"
   fi
 
   [ -f "$config" ] || die "config not found: $config"

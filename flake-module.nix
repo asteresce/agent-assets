@@ -8,11 +8,12 @@ let
   cfg = config.agentAssets;
   isActive = cfg.enable && cfg.config != { };
 
-  # The registry this flake ships. The standalone engine defaults --src to
-  # its own checkout; the apps pin it to this store path, which is the
-  # consumer's flake.lock-pinned revision of this flake. The engine is run
-  # from here too, so its spec.json lookup resolves inside the store.
-  registry = ./.;
+  # The package this flake ships: the engine, spec.json and the registry
+  # (`spec.defaults.src`) live here. The standalone engine finds all three
+  # relative to itself; the apps pin them to this store path, which is the
+  # consumer's flake.lock-pinned revision of this flake.
+  package = ./.;
+  assetsDir = "${package}/${spec.defaults.src}";
 
   makeProgram = pkgs: name:
     let
@@ -32,9 +33,9 @@ let
           pkgs.yq-go
         ];
         text = ''
-          exec ${pkgs.bash}/bin/bash ${registry}/bin/agent-assets ${lib.escapeShellArg name} \
+          exec ${pkgs.bash}/bin/bash ${package}/bin/agent-assets ${lib.escapeShellArg name} \
             --config ${lib.escapeShellArg configJson} \
-            --src ${lib.escapeShellArg "${registry}"} \
+            --src ${lib.escapeShellArg assetsDir} \
             --manifest ${lib.escapeShellArg cfg.manifest} \
             --project "''${PROJECT_ROOT:-$PWD}" \
             "$@"

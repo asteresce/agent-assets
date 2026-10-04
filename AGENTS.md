@@ -18,7 +18,10 @@ agent is, and how it discovers files, is the consumer's business.
 `spec.json` is the single source of truth for the package name, the defaults
 and the per-category section schema. The engine, the flake module, the tests
 and the docs generator all read it — never restate a value from it in code or
-prose; refer to the key instead (`defaults.manifest`, `defaults.skillEntry`, …).
+in behaviour-bearing prose (option tables, flag defaults, CLI text); refer to
+the key instead (`defaults.manifest`, `defaults.skillEntry`, …). A snapshot of
+this repository's layout may name the directories; the reference stays the
+authority for the values.
 
 Generated documentation is always named `<something>.generated.md` and is
 produced by `scripts/gen-reference.py` from `spec.json`. Hand-written pages
@@ -28,8 +31,9 @@ link to it; they never carry generated tables. Regenerate with
 
 ## Adding an asset
 
-1. Drop it in the registry: `rules/<name>.md`, `agents/<name>.md`, or
-   `skills/<name>/` with its entry file (`defaults.skillEntry`) plus artifacts.
+1. Drop it in the registry (`defaults.src`): `rules/<name>.md`,
+   `agents/<name>.md`, or `skills/<name>/` with its entry file
+   (`defaults.skillEntry`) plus artifacts.
 2. Add a line to that category's `README.md`.
 3. Keep the content provider-neutral: no frontmatter, no agent names, no
    references to where files land. All of that is injected by consumers.
