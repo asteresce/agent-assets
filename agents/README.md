@@ -4,7 +4,7 @@ These agent prompts are provider-neutral. Consumers import them and adapt them f
 
 Each agent can be referenced in a config by its file name without the `.md` extension.
 
-| Agent | Description | Suggested frontmatter |
+| Agent | Description | Keys consumers typically inject |
 |---|---|---|
 | [`build.md`](build.md) | Agent specialized in building and verifying the project. | `owner`, `model` |
 

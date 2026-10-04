@@ -1,67 +1,42 @@
 # Shared Agent Assets
 
-A reproducible, provider-agnostic Nix flake module for importing, adapting, and sharing agent rules, skills, and prompts across projects.
+Provider-neutral rules, skills and agent prompts, plus a small engine that
+puts them into a project tree: declarative, idempotent, and checkable in CI.
 
-The module reads a single declarative configuration and emits a project-tree overlay. Client projects apply that overlay and wire it into their agent of choice. OpenCode is shown as an example consumer.
+## What you get
 
-## What this project provides
+- `rules/`, `skills/`, `agents/` — a registry of shared Markdown assets.
+- `bin/agent-assets` — a bash engine with `render`, `sync` and `check`.
+- A flake-parts module wiring `nix run .#sync` and `nix run .#check`.
 
-- Shared, provider-neutral assets under `rules/`, `skills/`, and `agents/`.
-- A Nix flake module with one configuration entry point: `agentAssets.config`.
-- Injections that transform imported assets:
-  - `frontmatter` — inject YAML frontmatter.
-  - `json` — inject static content into JSON files.
-- A `./agent-assets.lock` file that records the emitted state for idempotent sync and orphan removal.
-- Flake apps for syncing and checking imported assets.
+The engine is a plain script: it runs outside Nix against any checkout too.
 
-## Quick start
+## Quick start (Nix)
 
 ```nix
 {
   inputs = {
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     flake-parts.url = "github:hercules-ci/flake-parts";
     agent-assets.url = "github:your-org/agent-assets";
   };
 
-  outputs = inputs@{ self, flake-parts, agent-assets, ... }:
+  outputs = inputs@{ flake-parts, agent-assets, ... }:
     flake-parts.lib.mkFlake { inherit inputs; } {
+      systems = [ "x86_64-linux" "aarch64-linux" "aarch64-darwin" "x86_64-darwin" ];
       imports = [ agent-assets.flakeModules.default ];
 
-      systems = [ "x86_64-linux" "aarch64-linux" "aarch64-darwin" "x86_64-darwin" ];
-
-      perSystem = { config, pkgs, ... }: {
-        agentAssets = {
-          enable = true;
-          config = {
-            rules = {
-              root = "./.opencode/rules";
-              imports = [
-                "code-style"
-                {
-                  name = "conventional-commits";
-                  rename = "commit-convention";
-                  destination = "conventions";
-                  injections = {
-                    frontmatter = {
-                      path = "./frontend";
-                    };
-                  };
-                }
-              ];
-              injections = {
-                frontmatter = {
-                  team = "platform";
-                };
-                json = [
-                  {
-                    file = "./opencode.json";
-                    content = {
-                      instructions = [ ".opencode/rules/**/*.md" ];
-                    };
-                  }
-                ];
-              };
-            };
+      # Declared at the module root, not inside `perSystem`.
+      agentAssets = {
+        enable = true;
+        config = {
+          rules = {
+            root = "./.opencode/rules";
+            imports = [ "code-style" "security" ];
+            injections.json = [{
+              file = "./opencode.json";
+              content.instructions = [ ".opencode/rules/**/*.md" ];
+            }];
           };
         };
       };
@@ -69,76 +44,112 @@ The module reads a single declarative configuration and emits a project-tree ove
 }
 ```
 
-A fuller example, including the `skills` and `agents` blocks, is in
-[`docs/examples/opencode.md`](docs/examples/opencode.md).
+```bash
+nix run .#sync     # write the assets into the project
+nix run .#check    # exit 1 if anything drifted (use it in CI)
+```
 
-## Sync to the project
+## Quick start (no Nix)
 
 ```bash
-nix run .#sync
+cat > agent-assets.json <<'EOF'
+{ "rules": { "root": "./.opencode/rules", "imports": ["security"] } }
+EOF
+path/to/agent-assets/bin/agent-assets sync
 ```
 
-Reconciles the project with the emitted tree using `./agent-assets.lock`:
+Requires `bash`, `jq` (>= 1.6), `yq` (mikefarah, v4) and standard coreutils.
+`--src` defaults to the checkout the script lives in, `--config` to
+`./agent-assets.json`, `--project` to `.`.
 
-- Applies JSON injections: deep-merges our keys into the target files.
-- Skips owned files whose on-disk hash already matches the lock.
-- Overwrites owned files whose hash differs.
-- Recopies skill directories whose directory hash differs.
-- Deletes files listed in the previous lock but absent from the current emission.
-- Refreshes the lock.
+## How it behaves
 
-Files under managed roots that are not in any lock are preserved (custom local files). If the lock is missing or unreadable, sync writes a fresh one and skips orphan deletion for that run.
+`sync` renders the configured assets from `--src` and reconciles them with the
+project. `check` performs the same comparison and only reports. This is the
+canonical description of both.
 
-For the full description, see [Sync behaviour](docs/concepts.md#sync-behaviour).
+- **Ownership.** `sync` records each imported asset in `./agent-assets.lock`
+  (JSON, one row per import, paths only — no hashes): a file asset is its
+  emitted file, a directory asset is its emitted directory. Only those paths
+  are ever overwritten or deleted.
+- **Shared roots.** The category `root` is a shared namespace. Anything under
+  it that no import claims — a custom rule, a whole custom skill directory —
+  is yours and is never touched, including after neighbouring imports change.
+- **Immutable assets.** After injection, an asset's contents are exactly the
+  render. A file inside a managed asset directory that we did not render is
+  removed and reported as `EXTRA`; the category root stays shared.
+- **Orphans.** An asset in the manifest that the config no longer produces is
+  deleted whole (file or directory), and directories left empty by that are
+  pruned. If the manifest is missing or unreadable, sync skips orphan removal
+  instead of guessing.
+- **Drift.** A rendered file that differs on disk is rewritten by `sync` and
+  reported as `DRIFT` by `check`. Managed files are outputs, not shared state —
+  there is no three-way merge.
+- **Frontmatter** (`injections.frontmatter`) *replaces* any frontmatter the
+  source carries. The category map and the per-import map are combined with
+  the per-import key winning, then emitted as YAML with sorted keys.
+- **JSON injections** (`injections.json`) *ensure presence* in a file you own:
+  object keys merge, arrays union (your items are kept), scalars are
+  enforced. Targets are never listed in the manifest and never deleted;
+  `check` reports `INJECT` whenever merging would still change the file.
+- `check` prints nothing and exits 0 when clean; it exits 1 on `MISSING`,
+  `DRIFT`, `EXTRA`, `ORPHAN` or `INJECT`. `sync` prints one line per change
+  (`WRITE`, `UPDATE`, `REMOVE`, `MERGE`) and is silent when nothing changed.
 
-## Check for drift
+## The registry
 
-```bash
-nix run .#check
-```
+| Category | Source | Emitted |
+|---|---|---|
+| `rules/` | `rules/<name>.md` | one Markdown file |
+| `skills/` | `skills/<name>/` (entry file `SKILL.md` + artifacts) | a directory |
+| `agents/` | `agents/<name>.md` | one Markdown file |
 
-Reports:
+Sources are provider-neutral: no frontmatter, no agent-specific framing. All
+frontmatter comes from the consumer's config. In a directory asset, `SKILL.md`
+is the entry file that receives frontmatter; every other file is an artifact
+and is copied verbatim.
 
-- Drift: owned file or skill dir whose hash differs from `./agent-assets.lock`.
-- JSON injection drift: target files missing the chunk's keys.
-- Orphans: paths under managed roots in the previous lock but absent from the current emission.
-- Heading errors: section-heading violations on imported assets.
+Adding an asset is a Markdown file plus a line in the category `README.md`.
+Adding a category is a new directory in the registry plus the matching config
+key: the engine infers file-vs-directory from whether the source is
+`<name>.md` or `<name>/`, so nothing else has to change.
 
-Exits non-zero on any report. Custom local files (not in any lock) are never flagged.
+## Pinning and updates
 
-For the full description, see [Check behaviour](docs/concepts.md#check-behaviour).
+The engine only ever reads `--src`; it never contacts the network and has no
+notion of upstream HEAD.
 
-## Moving the configuration to a separate file
+As a Nix consumer, `--src` is the store path of the `agent-assets` flake input
+**as pinned by your `flake.lock`**. Upstream releases cannot change your tree,
+and `check` stays green across upstream evolution. Standalone users get the
+same property by pointing `--src` at a pinned checkout (git submodule, vendored
+copy, or release tag).
 
-`agentAssets.config` can also be a path:
-
-```nix
-agentAssets.config = ./agent-assets.nix;
-```
-
-Because the config is pure data, it can later be converted to JSON (`./agent-assets.json`) without changing the schema.
+Updating the assets is therefore a deliberate, reviewable act: move the pin
+(`nix flake update agent-assets`), run `nix run .#sync`, commit the diff.
+Emitted files carry no provenance markers — the pin lives in `flake.lock`, so
+they stay plain Markdown.
 
 ## Documentation
 
-- [`docs/concepts.md`](docs/concepts.md) — core abstractions.
-- [`docs/api.md`](docs/api.md) — Nix flake module API and config schema.
-- [`docs/injections/frontmatter.md`](docs/injections/frontmatter.md) — frontmatter injection.
-- [`docs/injections/json.md`](docs/injections/json.md) — JSON injection.
-- [`docs/examples/opencode.md`](docs/examples/opencode.md) — OpenCode example.
-- [`rules/README.md`](rules/README.md), [`skills/README.md`](skills/README.md), [`agents/README.md`](agents/README.md) — asset catalogs.
+- [`docs/api.md`](docs/api.md) — config schema, injections, manifest, CLI and
+  the Nix module.
+- [`docs/examples/opencode.md`](docs/examples/opencode.md) — end-to-end
+  example wiring assets into OpenCode.
+- [`rules/README.md`](rules/README.md), [`skills/README.md`](skills/README.md),
+  [`agents/README.md`](agents/README.md) — asset catalogs.
+- [`AGENTS.md`](AGENTS.md) — contributing to this repository.
 
 ## Project layout
 
 ```
-flake.nix          # flake outputs (flake-parts module, lib helpers)
-rules/             # provider-neutral shared rules
-skills/            # provider-neutral shared skills
-agents/            # provider-neutral shared agent prompts
-docs/              # human-readable documentation
-opencode.json      # OpenCode config used to maintain this repo
-AGENTS.md          # contributor guidance for this repo
+bin/agent-assets     # the engine (bash + jq + yq)
+rules/               # provider-neutral shared rules
+skills/              # provider-neutral shared skills
+agents/              # provider-neutral shared agent prompts
+tests/               # integration tests for the engine
+docs/                # reference and examples
+flake.nix            # flakeModules.default + checks
+flake-module.nix     # the consumer-facing module
+opencode.json        # tooling config for maintaining this repo (not public API)
 ```
-
-## Status
-
-The documented public API is implemented. `nix flake check` runs the headings check, the 24-scenario self-test, and the nix-roundtrip smoke test that exercises sync/check/JSON injection/idempotency/orphan-removal/custom-file preservation.

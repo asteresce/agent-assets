@@ -1,0 +1,543 @@
+#!/usr/bin/env bash
+# agent-assets -- render, sync, and check shared agent assets.
+#
+# Reads a JSON config, renders assets out of a registry (--src), reconciles
+# them with a project tree (--project) and keeps a JSON manifest of the paths
+# we own, so stale ones can be removed and drift can be reported.
+#
+# Requires: bash, jq (>= 1.6), yq (mikefarah, v4) and coreutils (cp, cmp,
+# comm, find, sort, mkdir, rm, mktemp).
+#
+# --src is the only source of asset content; nothing is ever fetched from the
+# network. To pin the assets, pin the --src checkout (a flake input, a git
+# submodule, or a release archive).
+set -euo pipefail
+
+SEP=$'\037' # field separator of the internal record streams
+
+# Entry file of a directory asset (the one that receives frontmatter).
+SKILL_ENTRY=SKILL.md
+
+die() {
+  printf 'agent-assets: error: %s\n' "$*" >&2
+  exit 1
+}
+
+usage() {
+  cat <<'EOF'
+Usage: agent-assets <command> [options]
+
+Commands:
+  render --out DIR   Write the expected asset tree to DIR (nothing else).
+  sync               Write/update owned files, remove orphans, merge JSON.
+  check              Report problems; exit 1 if there are any.
+
+Options:
+  --config FILE    JSON config (default ./agent-assets.json)
+  --src DIR        Asset registry root (default: this checkout)
+  --project DIR    Project root (default .)
+  --manifest PATH  Manifest path relative to --project
+                   (default ./agent-assets.lock)
+  --out DIR        Destination tree (render only)
+  -h, --help       Show this help.
+
+Behaviour: see README.md ("How it behaves") and docs/api.md.
+EOF
+}
+
+# ---------------------------------------------------------------- jq glue
+
+# merge(target, chunk) -- ensure `chunk` is present in `target`.
+#   objects -> key-wise merge, keeping keys the target has and the chunk lacks
+#   arrays  -> union, keeping target order and appending missing chunk items
+#   scalars -> the chunk wins
+# shellcheck disable=SC2016  # $t/$c/... are jq variables, not shell ones.
+JQ_DEFS='
+  def union($a; $b):
+    reduce $b[] as $x ($a; if index($x) then . else . + [$x] end);
+  def merge($t; $c):
+    if ($t | type) == "object" and ($c | type) == "object" then
+      reduce ($c | to_entries[]) as $e
+        ($t; . + {($e.key): merge($t[$e.key]; $e.value)})
+    elif ($t | type) == "array" and ($c | type) == "array" then union($t; $c)
+    else $c end;
+'
+
+# Expand the config into one record per import. Fields are joined with $SEP:
+#   category, name, root, destination, rename, merged-frontmatter-json
+expand_config() {
+  jq -r '
+    def norm:
+      if type == "string" then {name: .}
+      elif type == "object" then .
+      else error("imports must be strings or objects") end;
+    def obj(x; what):
+      if x == null then {}
+      elif (x | type) == "object" then x
+      else error(what + " must be an object") end;
+    if (type != "object") then error("config must be a JSON object") else . end
+    | to_entries[]
+    | .key as $cat
+    | obj(.value; ("category config for " + $cat)) as $cfg
+    | obj($cfg.injections.frontmatter; "injections.frontmatter") as $catfm
+    | (($cfg.imports // []) | map(norm))[]
+    | obj(.injections.frontmatter; "injections.frontmatter") as $impfm
+    | if (.name | type) != "string" or .name == "" then
+        error("every import needs a non-empty string name")
+      else . end
+    | [ $cat, .name,
+        ($cfg.root // ("./.agent-assets/" + $cat)),
+        (.destination // ""),
+        (.rename // .name),
+        (($catfm + $impfm) | tojson) ]
+    | join("\u001f")
+  ' "$1"
+}
+
+# Emit one {file, content} JSON object per injections.json entry.
+config_json_chunks() {
+  jq -c '
+    def obj(x; what):
+      if x == null then {}
+      elif (x | type) == "object" then x
+      else error(what + " must be an object") end;
+    if (type != "object") then error("config must be a JSON object") else . end
+    | to_entries[]
+    | obj(.value; ("category config for " + .key)) as $cfg
+    | (if ($cfg.injections.json // [] | type) != "array" then
+         error("injections.json must be an array")
+       else ($cfg.injections.json // []) end)[]
+    | if (.file | type) != "string" or .file == "" then
+        error("every injections.json entry needs a non-empty string file")
+      else . end
+    | {file: .file, content: obj(.content; "injections.json content")}
+  ' "$1"
+}
+
+# Combine every chunk aimed at one file into a single chunk.
+json_chunk_for() {
+  local chunks_file="$1" target="$2"
+  jq -s -c --arg f "$target" "$JQ_DEFS"'
+    [ .[] | select(.file == $f) | .content ]
+    | reduce .[] as $c ({}; merge(.; $c))
+  ' "$chunks_file"
+}
+
+# --------------------------------------------------------------- rendering
+
+# Drop a leading "---" ... "---" frontmatter block. A block without a closing
+# delimiter is not frontmatter and is passed through unchanged.
+strip_frontmatter() {
+  awk '
+    NR == 1 {
+      if ($0 == "---") { infm = 1 } else { print; notfm = 1 }
+      next
+    }
+    notfm { print; next }
+    infm && $0 == "---" { infm = 0; started = 0; next }
+    infm { buf = buf $0 "\n"; next }
+    {
+      if (!started && $0 == "") next
+      started = 1
+      print
+    }
+    END { if (infm) printf "---\n%s", buf }
+  '
+}
+
+# Emit a rendered asset: source body with any frontmatter replaced by $2
+# (compact JSON) rendered as YAML. Keys are sorted so the emitted bytes do
+# not depend on the key order of the config.
+render_markdown() {
+  local src="$1" fm="$2"
+  if jq -e 'type == "object" and length > 0' >/dev/null 2>&1 <<<"$fm"; then
+    printf -- '---\n'
+    yq -P 'sort_keys(..)' <<<"$fm"
+    printf -- '---\n\n'
+  fi
+  strip_frontmatter <"$src"
+}
+
+normpath() {
+  local p="${1#./}"
+  printf '%s' "${p%/}"
+}
+
+assert_name() {
+  case "$1" in
+    "" | */* | *[![:print:]]*) die "invalid asset name: '$1'" ;;
+  esac
+}
+
+assert_safe_relpath() {
+  case "$1" in
+    "") die "empty path" ;;
+    /*) die "path must be project-relative: $1" ;;
+    *[![:print:]]*) die "path contains control characters: $1" ;;
+  esac
+  case "/$1/" in
+    */../*) die "path must not contain '..': $1" ;;
+  esac
+}
+
+# Render the expected tree into $1. Two record streams are produced, fields
+# joined with $SEP:
+#   $2 -- one row per imported asset:   category, name, asset path
+#   $3 -- one row per emitted file:     category, name, file path
+render_tree() {
+  local out="$1" assets="$2" files="$3"
+  mkdir -p "$out"
+  : >"$assets"
+  : >"$files"
+
+  local plan="$TMP/plan.tsv"
+  expand_config "$config" >"$plan" || die "invalid config: $config"
+
+  local category name root dest rename fm_json
+  while IFS="$SEP" read -r category name root dest rename fm_json; do
+    [ -n "$category" ] || continue
+    assert_name "$name"
+    assert_name "$category"
+    assert_name "$rename"
+
+    local dir src_file src_dir relpath
+    dir=$(normpath "$root")
+    if [ -n "$dest" ]; then dir="$dir/$dest"; fi
+    src_file="$src/$category/$name.md"
+    src_dir="$src/$category/$name"
+
+    if [ -f "$src_file" ]; then
+      relpath=$(normpath "$dir/$rename.md")
+      assert_safe_relpath "$relpath"
+      mkdir -p "$out/$(dirname "$relpath")"
+      render_markdown "$src_file" "$fm_json" >"$out/$relpath"
+      printf '%s%s%s%s%s\n' "$category" "$SEP" "$name" "$SEP" "$relpath" >>"$assets"
+      printf '%s%s%s%s%s\n' "$category" "$SEP" "$name" "$SEP" "$relpath" >>"$files"
+
+    elif [ -d "$src_dir" ]; then
+      relpath=$(normpath "$dir/$rename")
+      assert_safe_relpath "$relpath"
+      printf '%s%s%s%s%s\n' "$category" "$SEP" "$name" "$SEP" "$relpath" >>"$assets"
+      local rel
+      while IFS= read -r -d '' rel; do
+        rel="${rel#./}"
+        assert_safe_relpath "$relpath/$rel"
+        mkdir -p "$out/$relpath/$(dirname "$rel")"
+        if [ "$rel" = "$SKILL_ENTRY" ]; then
+          render_markdown "$src_dir/$rel" "$fm_json" >"$out/$relpath/$rel"
+        else
+          cp "$src_dir/$rel" "$out/$relpath/$rel"
+        fi
+        printf '%s%s%s%s%s\n' "$category" "$SEP" "$name" "$SEP" "$relpath/$rel" >>"$files"
+      done < <(cd "$src_dir" && find . -type f -print0)
+
+    else
+      die "asset not found: $category/$name (expected $src_file or $src_dir)"
+    fi
+  done <"$plan"
+}
+
+# Turn an entries stream into the JSON manifest.
+manifest_json() {
+  jq -R -s '
+    split("\n")
+    | map(select(length > 0) | split("\u001f")
+          | {category: .[0], name: .[1], path: .[2]})
+  ' "$1"
+}
+
+# True iff `relpath` is the manifest's own asset path, or lives inside one.
+manifest_owns() {
+  local manifest_path="$1" relpath="$2" p
+  [ -f "$manifest_path" ] || return 1
+  while IFS= read -r p; do
+    [ -n "$p" ] || continue
+    if [ "$p" = "$relpath" ] || [ "${relpath#"$p"/}" != "$relpath" ]; then
+      return 0
+    fi
+  done < <(manifest_paths "$manifest_path")
+  return 1
+}
+
+manifest_paths() {
+  jq -r '.[] | select(type == "object") | .path | select(type == "string")' "$1" 2>/dev/null
+}
+
+# Files sitting inside managed directory assets that we did not render.
+# A directory asset is immutable after injection, so these are not user
+# files -- they are things that should not be there.
+extra_files() {
+  local project="$1" assets="$2" files="$3" relpath
+  comm -23 \
+    <(
+      while IFS="$SEP" read -r _ _ relpath; do
+        [ -d "$project/$relpath" ] || continue
+        (cd "$project" && find "$relpath" -type f)
+      done <"$assets" | sort
+    ) \
+    <(awk -F "$SEP" '{print $3}' "$files" | sort)
+}
+
+prune_empty_dirs() {
+  local project="$1" rel="$2" d
+  d=$(dirname "$rel")
+  while [ "$d" != "." ] && [ "$d" != "/" ] && [ -n "$d" ]; do
+    rmdir "$project/$d" 2>/dev/null || break
+    d=$(dirname "$d")
+  done
+}
+
+# ------------------------------------------------------------------- JSON
+
+# apply_json_injections MODE PROJECT CHUNKS_FILE
+#   MODE is "sync" (write merges) or "check" (report gaps).
+#   Report/merge lines are printed; PROBLEMS is bumped in check mode.
+apply_json_injections() {
+  local mode="$1" project="$2" chunks_file="$3"
+  local targets target rel abs chunk
+  targets=$(jq -r '.file' "$chunks_file" | sort -u)
+  [ -n "$targets" ] || return 0
+
+  while IFS= read -r target; do
+    [ -n "$target" ] || continue
+    rel=$(normpath "$target")
+    assert_safe_relpath "$rel"
+    abs="$project/$rel"
+    chunk=$(json_chunk_for "$chunks_file" "$target")
+
+    if [ -f "$abs" ]; then
+      jq empty "$abs" 2>/dev/null || die "$rel is not valid JSON"
+      if jq -e --argjson c "$chunk" "$JQ_DEFS"' merge(.; $c) == .' "$abs" >/dev/null 2>&1; then
+        continue
+      fi
+      if [ "$mode" = check ]; then
+        printf 'INJECT %s\n' "$rel"
+        PROBLEMS=$((PROBLEMS + 1))
+      else
+        mkdir -p "$(dirname "$abs")"
+        jq --argjson c "$chunk" "$JQ_DEFS"' merge(.; $c)' "$abs" >"$abs.tmp"
+        mv "$abs.tmp" "$abs"
+        printf 'MERGE %s\n' "$rel"
+      fi
+    else
+      if [ "$mode" = check ]; then
+        printf 'INJECT %s\n' "$rel"
+        PROBLEMS=$((PROBLEMS + 1))
+      else
+        mkdir -p "$(dirname "$abs")"
+        jq -n --argjson c "$chunk" '$c' >"$abs"
+        printf 'MERGE %s\n' "$rel"
+      fi
+    fi
+  done <<<"$targets"
+}
+
+# -------------------------------------------------------------- orphans
+
+# list_orphans MANIFEST_PATH ASSETS_FILE
+list_orphans() {
+  local manifest_path="$1" assets="$2"
+  [ -f "$manifest_path" ] || return 0
+  jq -e 'type == "array"' "$manifest_path" >/dev/null 2>&1 || return 0
+  comm -23 \
+    <(manifest_paths "$manifest_path" | sort) \
+    <(awk -F "$SEP" '{print $3}' "$assets" | sort)
+}
+
+warn_unreadable_manifest() {
+  local manifest_path="$1"
+  if [ -f "$manifest_path" ] && ! jq -e 'type == "array"' "$manifest_path" >/dev/null 2>&1; then
+    printf 'agent-assets: warning: unreadable manifest at %s, skipping orphan removal\n' \
+      "$manifest_path" >&2
+  fi
+}
+
+# ---------------------------------------------------------------- commands
+
+cmd_render() {
+  [ -n "$out" ] || die "render requires --out DIR"
+  render_tree "$out" "$TMP/assets" "$TMP/files"
+}
+
+cmd_sync() {
+  local tree="$TMP/tree" assets="$TMP/assets" files="$TMP/files"
+  local manifest_path="$project/${manifest#./}"
+  render_tree "$tree" "$assets" "$files"
+
+  config_json_chunks "$config" >"$TMP/chunks.jsonl" || die "invalid config: $config"
+  apply_json_injections sync "$project" "$TMP/chunks.jsonl"
+
+  local relpath target
+  while IFS= read -r relpath; do
+    [ -n "$relpath" ] || continue
+    target="$project/$relpath"
+    if [ -e "$target" ] && [ ! -f "$target" ]; then
+      if manifest_owns "$manifest_path" "$relpath"; then
+        rm -rf "$target"
+      else
+        die "refusing to replace unowned $target"
+      fi
+    fi
+    mkdir -p "$(dirname "$target")"
+    if [ ! -f "$target" ]; then
+      cp "$tree/$relpath" "$target"
+      printf 'WRITE %s\n' "$relpath"
+    elif ! cmp -s "$tree/$relpath" "$target"; then
+      cp "$tree/$relpath" "$target"
+      printf 'UPDATE %s\n' "$relpath"
+    fi
+  done < <(awk -F "$SEP" '{print $3}' "$files")
+
+  # Anything else inside a managed asset directory is removed: the asset is
+  # immutable after injection.
+  while IFS= read -r relpath; do
+    [ -n "$relpath" ] || continue
+    assert_safe_relpath "$relpath"
+    rm -f "${project:?}/$relpath"
+    printf 'REMOVE %s\n' "$relpath"
+    prune_empty_dirs "$project" "$relpath"
+  done < <(extra_files "$project" "$assets" "$files")
+
+  warn_unreadable_manifest "$manifest_path"
+  local rel
+  while IFS= read -r rel; do
+    [ -n "$rel" ] || continue
+    assert_safe_relpath "$rel"
+    if [ -e "$project/$rel" ]; then
+      rm -rf "${project:?}/$rel"
+      printf 'REMOVE %s\n' "$rel"
+      prune_empty_dirs "$project" "$rel"
+    fi
+  done < <(list_orphans "$manifest_path" "$assets")
+
+  mkdir -p "$(dirname "$manifest_path")"
+  manifest_json "$assets" >"$manifest_path"
+}
+
+cmd_check() {
+  local tree="$TMP/tree" assets="$TMP/assets" files="$TMP/files"
+  local manifest_path="$project/${manifest#./}"
+  render_tree "$tree" "$assets" "$files"
+
+  local category name relpath
+  while IFS="$SEP" read -r category name relpath; do
+    [ -n "$relpath" ] || continue
+    if [ ! -f "$project/$relpath" ]; then
+      printf 'MISSING %s (from %s/%s)\n' "$relpath" "$category" "$name"
+      PROBLEMS=$((PROBLEMS + 1))
+    elif ! cmp -s "$tree/$relpath" "$project/$relpath"; then
+      printf 'DRIFT %s (from %s/%s)\n' "$relpath" "$category" "$name"
+      PROBLEMS=$((PROBLEMS + 1))
+    fi
+  done <"$files"
+
+  while IFS= read -r relpath; do
+    [ -n "$relpath" ] || continue
+    printf 'EXTRA %s\n' "$relpath"
+    PROBLEMS=$((PROBLEMS + 1))
+  done < <(extra_files "$project" "$assets" "$files")
+
+  warn_unreadable_manifest "$manifest_path"
+  local rel
+  while IFS= read -r rel; do
+    [ -n "$rel" ] || continue
+    printf 'ORPHAN %s\n' "$rel"
+    PROBLEMS=$((PROBLEMS + 1))
+  done < <(list_orphans "$manifest_path" "$assets")
+
+  config_json_chunks "$config" >"$TMP/chunks.jsonl" || die "invalid config: $config"
+  apply_json_injections check "$project" "$TMP/chunks.jsonl"
+
+  if [ "$PROBLEMS" -gt 0 ]; then
+    exit 1
+  fi
+}
+
+# ------------------------------------------------------------------- main
+
+TMP=""
+cleanup() {
+  if [ -n "$TMP" ] && [ -d "$TMP" ]; then
+    rm -rf "$TMP"
+  fi
+}
+trap cleanup EXIT
+
+main() {
+  local cmd="${1:-}"
+  case "$cmd" in
+    -h | --help | help)
+      usage
+      exit 0
+      ;;
+    render | sync | check) shift ;;
+    "")
+      usage >&2
+      exit 1
+      ;;
+    *)
+      die "unknown command: $cmd"
+      ;;
+  esac
+
+  local config="./agent-assets.json" src="" project="."
+  local manifest="./agent-assets.lock" out=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --config)
+        [ $# -ge 2 ] || die "--config needs a value"
+        config="$2"
+        shift 2
+        ;;
+      --src)
+        [ $# -ge 2 ] || die "--src needs a value"
+        src="$2"
+        shift 2
+        ;;
+      --project)
+        [ $# -ge 2 ] || die "--project needs a value"
+        project="$2"
+        shift 2
+        ;;
+      --manifest)
+        [ $# -ge 2 ] || die "--manifest needs a value"
+        manifest="$2"
+        shift 2
+        ;;
+      --out)
+        [ $# -ge 2 ] || die "--out needs a value"
+        out="$2"
+        shift 2
+        ;;
+      -h | --help)
+        usage
+        exit 0
+        ;;
+      *)
+        die "unknown option: $1"
+        ;;
+    esac
+  done
+
+  if [ -z "$src" ]; then
+    local here
+    here=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
+    src=$(dirname "$here")
+  fi
+
+  [ -f "$config" ] || die "config not found: $config"
+  jq -e 'type == "object"' "$config" >/dev/null 2>&1 || die "config must be a JSON object: $config"
+  [ -d "$src" ] || die "registry not found: $src"
+  [ -d "$project" ] || die "project not found: $project"
+
+  TMP=$(mktemp -d)
+  PROBLEMS=0
+
+  case "$cmd" in
+    render) cmd_render ;;
+    sync) cmd_sync ;;
+    check) cmd_check ;;
+  esac
+}
+
+main "$@"
