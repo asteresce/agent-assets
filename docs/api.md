@@ -60,8 +60,8 @@ Either a string (shorthand for `{ "name": "<string>" }`) or an object:
 
 ### Format inference
 
-For each import the engine looks for `--src/<category>/<name>.md` and then for
-`--src/<category>/<name>/`:
+For each import the engine looks for `--assets/<category>/<name>.md` and then for
+`--assets/<category>/<name>/`:
 
 - `<name>.md` found — a **file asset**, emitted to
   `<root>/<destination>/<rename>.md`.
@@ -172,7 +172,7 @@ agent-assets check
 | Flag | Meaning |
 |---|---|
 | `--config FILE` | config path (default `defaults.config`) |
-| `--src DIR` | asset registry root (default: this package's `defaults.src`) |
+| `--assets DIR` | asset registry root (default: this package's `defaults.assets`) |
 | `--project DIR` | project root to reconcile (default `defaults.project`) |
 | `--manifest PATH` | manifest, relative to `--project` (default `defaults.manifest`) |
 | `--out DIR` | destination tree (`render` only) |
@@ -185,6 +185,9 @@ Output tokens: `check` prints `MISSING`, `DRIFT`, `EXTRA`, `ORPHAN`, `INJECT`
 directory where a file belongs);
 `sync` prints `WRITE`, `UPDATE`, `REMOVE`, `MERGE`. Both are silent when there
 is nothing to say. `render` writes the expected tree and touches nothing else.
+Status words are coloured on a terminal (`NO_COLOR` and
+`AGENT_ASSETS_COLOR=always|never` are honoured); paths stay plain so the output
+is greppable, and the `(from <category>/<name>)` attribution is dimmed.
 
 ## Nix module
 
@@ -215,6 +218,6 @@ nix run .#sync
 nix run .#check
 ```
 
-Both run with `--src` pinned to this flake's store path (your `flake.lock`
+Both run with `--assets` pinned to this flake's store path (your `flake.lock`
 revision) and `--project` set to `$PROJECT_ROOT`, falling back to `$PWD`. Extra
 arguments after `--` are forwarded to the engine.

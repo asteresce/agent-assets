@@ -8,12 +8,12 @@ let
   cfg = config.agentAssets;
   isActive = cfg.enable && cfg.config != { };
 
-  # The package this flake ships: the engine, spec.json and the registry
-  # (`spec.defaults.src`) live here. The standalone engine finds all three
+  # The package this flake ships: the engine, spec.json and the assets
+  # (`spec.defaults.assets`) live here. The standalone engine finds all three
   # relative to itself; the apps pin them to this store path, which is the
   # consumer's flake.lock-pinned revision of this flake.
   package = ./.;
-  assetsDir = "${package}/${spec.defaults.src}";
+  assets = "${package}/${spec.defaults.assets}";
 
   makeProgram = pkgs: name:
     let
@@ -35,7 +35,7 @@ let
         text = ''
           exec ${pkgs.bash}/bin/bash ${package}/bin/agent-assets ${lib.escapeShellArg name} \
             --config ${lib.escapeShellArg configJson} \
-            --src ${lib.escapeShellArg assetsDir} \
+            --assets ${lib.escapeShellArg assets} \
             --manifest ${lib.escapeShellArg cfg.manifest} \
             --project "''${PROJECT_ROOT:-$PWD}" \
             "$@"

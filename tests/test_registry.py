@@ -19,7 +19,7 @@ def assets(category):
     Catalog indexes (`README.md`) are not assets, and artifacts inside a
     directory asset are free-form.
     """
-    root = REPO / DEFAULTS["src"] / category
+    root = REPO / DEFAULTS["assets"] / category
     for entry in sorted(root.iterdir()):
         if entry.is_dir():
             yield entry / DEFAULTS["skillEntry"]
@@ -70,7 +70,7 @@ class RegistryTest(unittest.TestCase):
     def test_every_schema_category_exists(self):
         for category in SPEC["headings"]:
             self.assertTrue(
-                (REPO / DEFAULTS["src"] / category).is_dir(), category
+                (REPO / DEFAULTS["assets"] / category).is_dir(), category
             )
 
 

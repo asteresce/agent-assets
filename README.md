@@ -61,13 +61,13 @@ path/to/agent-assets/bin/agent-assets sync
 
 Requires `bash`, `jq` (>= 1.6), `yq` (mikefarah, v4), `awk` and standard
 coreutils.
-`--src` defaults to the checkout the script lives in; the remaining defaults
-are in [the reference](docs/reference.generated.md).
+`--assets` defaults to the `assets/` directory of this package; the remaining
+defaults are in [the reference](docs/reference.generated.md).
 
 ## How it behaves
 
-`sync` renders the configured assets from `--src` and reconciles them with the
-project. `check` performs the same comparison and only reports. This is the
+`sync` renders the configured assets from `--assets` and reconciles them with
+the project. `check` performs the same comparison and only reports. This is the
 canonical description of both.
 
 - **Ownership.** `sync` records each imported asset in the manifest
@@ -105,9 +105,9 @@ canonical description of both.
 
 | Category | Source | Emitted |
 |---|---|---|
-| `rules/` | `<src>/rules/<name>.md` | one Markdown file |
-| `skills/` | `<src>/skills/<name>/` (entry file + artifacts) | a directory |
-| `agents/` | `<src>/agents/<name>.md` | one Markdown file |
+| `rules/` | `assets/rules/<name>.md` | one Markdown file |
+| `skills/` | `assets/skills/<name>/` (entry file + artifacts) | a directory |
+| `agents/` | `assets/agents/<name>.md` | one Markdown file |
 
 Sources are provider-neutral: no frontmatter, no agent-specific framing. All
 frontmatter comes from the consumer's config. In a directory asset, one file is
@@ -122,14 +122,14 @@ key: the engine infers file-vs-directory from whether the source is
 
 ## Pinning and updates
 
-The engine only ever reads `--src`; it never contacts the network and has no
+The engine only ever reads `--assets`; it never contacts the network and has no
 notion of upstream HEAD.
 
-As a Nix consumer, `--src` is the store path of the `agent-assets` flake input
-**as pinned by your `flake.lock`**. Upstream releases cannot change your tree,
-and `check` stays green across upstream evolution. Standalone users get the
-same property by pointing `--src` at a pinned checkout (git submodule, vendored
-copy, or release tag).
+As a Nix consumer, `--assets` is the store path of the `agent-assets` flake
+input **as pinned by your `flake.lock`**. Upstream releases cannot change your
+tree, and `check` stays green across upstream evolution. Standalone users get
+the same property by pointing `--assets` at a pinned checkout (git submodule,
+vendored copy, or release tag).
 
 Updating the assets is therefore a deliberate, reviewable act: move the pin
 (`nix flake update agent-assets`), run `nix run .#sync`, commit the diff.
@@ -140,10 +140,14 @@ they stay plain Markdown.
 
 - [`docs/api.md`](docs/api.md) — config schema, injections, manifest, CLI and
   the Nix module.
+- [`docs/reference.generated.md`](docs/reference.generated.md) — declared
+  defaults and section schemas.
 - [`docs/examples/opencode.md`](docs/examples/opencode.md) — end-to-end
   example wiring assets into OpenCode.
-- [`rules/README.md`](rules/README.md), [`skills/README.md`](skills/README.md),
-  [`agents/README.md`](agents/README.md) — asset catalogs.
+- [`assets/rules/README.md`](assets/rules/README.md),
+  [`assets/skills/README.md`](assets/skills/README.md),
+  [`assets/agents/README.md`](assets/agents/README.md) — asset catalogs, each
+  linking to its generated table.
 - [`AGENTS.md`](AGENTS.md) — contributing to this repository.
 
 ## Project layout
@@ -153,8 +157,8 @@ bin/agent-assets     # the engine (bash + jq + yq)
 spec.json            # declared defaults and section schemas
 assets/              # the shared registry: rules/, skills/, agents/
 tests/               # integration tests for the engine
-scripts/             # repo tooling (the reference generator)
-docs/                # reference and examples
+scripts/             # repo tooling (the docs generator)
+docs/                # reference, catalogs and examples (some generated)
 flake.nix            # flakeModules.default + checks
 flake-module.nix     # the consumer-facing module
 opencode.json        # tooling config for maintaining this repo (not public API)

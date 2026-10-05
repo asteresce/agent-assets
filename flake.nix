@@ -56,7 +56,7 @@
               cp -r ${./.} src
               chmod -R u+w src
               cd src
-              python3 scripts/gen-reference.py --check
+              python3 scripts/gen-docs.py --check
               mkdir -p $out
             '';
         });

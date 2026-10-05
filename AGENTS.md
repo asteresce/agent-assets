@@ -6,9 +6,10 @@ agent is, and how it discovers files, is the consumer's business.
 
 ## Terminology
 
-- **Registry** — `rules/`, `skills/`, `agents/`; the shared asset sources.
-- **Category** — one registry directory (and one top-level config key).
-- **Import** — one config entry selecting a registry asset to emit.
+- **Assets** — `assets/`, the shared asset sources; one directory per category.
+- **Category** — one directory under the assets root (and one top-level config
+  key).
+- **Import** — one config entry selecting an asset to emit.
 - **Injection** — a data-driven transform applied at emit time
   (`frontmatter`, `json`).
 - **Manifest** — `defaults.manifest`; the paths a sync owns.
@@ -23,22 +24,25 @@ the key instead (`defaults.manifest`, `defaults.skillEntry`, …). A snapshot of
 this repository's layout may name the directories; the reference stays the
 authority for the values.
 
-Generated documentation is always named `<something>.generated.md` and is
-produced by `scripts/gen-reference.py` from `spec.json`. Hand-written pages
-link to it; they never carry generated tables. Regenerate with
-`python3 scripts/gen-reference.py`, and `nix flake check` fails if a
-`*.generated.md` file is out of date.
+Generated documentation is only ever a whole file under `docs/`, named
+`<something>.generated.md`, produced by `scripts/gen-docs.py` from `spec.json`.
+Generated content is never embedded in a hand-written page, and generated files
+stay light; hand-written pages link to them. Regenerate with
+`python3 scripts/gen-docs.py`, and `nix flake check` fails if a `*.generated.md`
+file is missing, stale or stray.
 
 ## Adding an asset
 
-1. Drop it in the registry (`defaults.src`): `rules/<name>.md`,
+1. Drop it in the registry (`defaults.assets`): `rules/<name>.md`,
    `agents/<name>.md`, or `skills/<name>/` with its entry file
    (`defaults.skillEntry`) plus artifacts.
-2. Add a line to that category's `README.md`.
-3. Keep the content provider-neutral: no frontmatter, no agent names, no
+2. Keep the content provider-neutral: no frontmatter, no agent names, no
    references to where files land. All of that is injected by consumers.
-4. Keep the sections in the order `spec.json` declares for the category —
+3. Keep the sections in the order `spec.json` declares for the category —
    `nix flake check` enforces it.
+
+The category catalog regenerates itself (`python3 scripts/gen-docs.py`), so
+there is no listing to maintain.
 
 Adding a **category** is a new registry directory plus the matching config key
 in consumers — the engine infers file-vs-directory from the source layout and

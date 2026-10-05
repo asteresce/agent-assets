@@ -4,8 +4,6 @@ These agent prompts are provider-neutral. Consumers import them and adapt them f
 
 Each agent can be referenced in a config by its file name without the `.md` extension.
 
-| Agent | Description | Keys consumers typically inject |
-|---|---|---|
-| [`build.md`](build.md) | Agent specialized in building and verifying the project. | `owner`, `model` |
+The catalog is generated: see [agents.generated.md](../../docs/agents.generated.md).
 
-Add new agents here and document them in this file.
+Add new agents here; the catalog regenerates itself.

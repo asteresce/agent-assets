@@ -45,22 +45,22 @@ class EngineTest(unittest.TestCase):
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp(prefix="agent-assets-test-"))
         self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
-        self.src = self.tmp / "registry"
+        self.assets = self.tmp / "registry"
         self.project = self.tmp / "project"
         self.project.mkdir()
         self.config = self.tmp / CONFIG_NAME
 
-        rules = self.src / "rules"
+        rules = self.assets / "rules"
         rules.mkdir(parents=True)
         (rules / "security.md").write_text(SECURITY)
         (rules / "code-style.md").write_text(CODE_STYLE)
 
-        skill_dir = self.src / "skills" / "migration"
+        skill_dir = self.assets / "skills" / "migration"
         skill_dir.mkdir(parents=True)
         (skill_dir / SKILL_ENTRY).write_text(SKILLS_MD)
         (skill_dir / "checklist.md").write_text(CHECKLIST)
 
-        agents = self.src / "agents"
+        agents = self.assets / "agents"
         agents.mkdir(parents=True)
         (agents / "build.md").write_text(BUILD)
 
@@ -104,7 +104,7 @@ class EngineTest(unittest.TestCase):
 
     # -------------------------------------------------------------- helpers
 
-    def run_engine(self, *args, expect=0):
+    def run_engine(self, *args, expect=0, env=None):
         # Invoked via `bash` rather than the shebang: the Nix build sandbox
         # has no /usr/bin/env, so a `#!/usr/bin/env bash` script cannot be
         # exec'd there.
@@ -114,12 +114,12 @@ class EngineTest(unittest.TestCase):
             *args,
             "--config",
             str(self.config),
-            "--src",
-            str(self.src),
+            "--assets",
+            str(self.assets),
             "--project",
             str(self.project),
         ]
-        proc = subprocess.run(cmd, capture_output=True, text=True)
+        proc = subprocess.run(cmd, capture_output=True, text=True, env=env)
         self.assertEqual(
             proc.returncode,
             expect,
@@ -128,11 +128,11 @@ class EngineTest(unittest.TestCase):
         )
         return proc
 
-    def sync(self, expect=0):
-        return self.run_engine("sync", expect=expect)
+    def sync(self, expect=0, env=None):
+        return self.run_engine("sync", expect=expect, env=env)
 
-    def check(self, expect=0):
-        return self.run_engine("check", expect=expect)
+    def check(self, expect=0, env=None):
+        return self.run_engine("check", expect=expect, env=env)
 
     def path(self, rel):
         return self.project / rel
@@ -203,7 +203,7 @@ class EngineTest(unittest.TestCase):
 
     def test_source_change_updates_file(self):
         self.sync()
-        (self.src / "rules" / "security.md").write_text("## Summary\n\nNew text.\n")
+        (self.assets / "rules" / "security.md").write_text("## Summary\n\nNew text.\n")
         proc = self.sync()
         self.assertEqual(proc.stdout, "UPDATE .opencode/rules/security.md\n")
         self.assertIn("New text.", self.read(".opencode/rules/security.md"))
@@ -249,7 +249,7 @@ class EngineTest(unittest.TestCase):
     def test_removed_artifact_inside_skill_dir_is_deleted(self):
         self.sync()
         self.assertTrue(self.path(".opencode/skills/migration/checklist.md").exists())
-        (self.src / "skills" / "migration" / "checklist.md").unlink()
+        (self.assets / "skills" / "migration" / "checklist.md").unlink()
         proc = self.sync()
         self.assertEqual(proc.stdout, "REMOVE .opencode/skills/migration/checklist.md\n")
         self.assertFalse(self.path(".opencode/skills/migration/checklist.md").exists())
@@ -311,7 +311,7 @@ class EngineTest(unittest.TestCase):
         self.assertEqual(body, CODE_STYLE)
 
     def test_frontmatter_injection_replaces_source_frontmatter(self):
-        (self.src / "rules" / "security.md").write_text(
+        (self.assets / "rules" / "security.md").write_text(
             "---\nsource: kept\n---\n\n" + SECURITY
         )
         self.sync()
@@ -452,6 +452,28 @@ class EngineTest(unittest.TestCase):
         self.check(expect=1)
         self.assertEqual(self.read(".opencode/rules/security.md"), "tampered\n")
         self.assertEqual(json.loads(self.read("opencode.json")), {"user": 1})
+
+    # -------------------------------------------------------------- colours
+
+    def test_status_words_are_coloured_on_request(self):
+        env = dict(os.environ, AGENT_ASSETS_COLOR="always")
+        written = self.sync(env=env)
+        self.assertIn("\033[32mWRITE\033[0m", written.stdout)
+        self.write(".opencode/rules/security.md", "tampered\n")
+        proc = self.check(expect=1, env=env)
+        self.assertIn("\033[33mDRIFT\033[0m", proc.stdout)
+        # paths stay plain so the output is greppable; attribution is dimmed
+        self.assertIn(" .opencode/rules/security.md ", proc.stdout)
+        self.assertIn("\033[2m(from rules/security)\033[0m", proc.stdout)
+
+    def test_status_words_stay_plain_when_asked(self):
+        self.sync()
+        self.write(".opencode/rules/security.md", "tampered\n")
+        env = dict(os.environ, AGENT_ASSETS_COLOR="never")
+        proc = self.check(expect=1, env=env)
+        self.assertEqual(
+            proc.stdout, "DRIFT .opencode/rules/security.md (from rules/security)\n"
+        )
 
     # ------------------------------------------------------------- render
 

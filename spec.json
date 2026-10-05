@@ -1,7 +1,7 @@
 {
   "name": "agent-assets",
   "defaults": {
-    "src": "assets",
+    "assets": "assets",
     "config": "./agent-assets.json",
     "manifest": "./agent-assets.lock",
     "project": ".",

@@ -4,9 +4,6 @@ These rules are provider-neutral. Consumers import them and adapt them for their
 
 Each rule can be referenced in a config by its file name without the `.md` extension.
 
-| Rule | Description | Keys consumers typically inject |
-|---|---|---|
-| [`security.md`](security.md) | Prevent committing secrets and handle credentials safely. | `owner`, `severity` |
-| [`code-style.md`](code-style.md) | General code consistency and review habits. | `team`, `language` |
+The catalog is generated: see [rules.generated.md](../../docs/rules.generated.md).
 
-Add new rules here and document them in this file.
+Add new rules here; the catalog regenerates itself.
