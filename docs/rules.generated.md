@@ -4,5 +4,4 @@
 
 | Rule | Excerpt |
 |---|---|
-| [`code-style.md`](../assets/rules/code-style.md) | General code consistency and review habits. |
-| [`security.md`](../assets/rules/security.md) | Rules for handling secrets and credentials safely. |
+| [`conventional-commits.md`](../assets/rules/conventional-commits.md) | Commit messages follow the Conventional Commits specification. |

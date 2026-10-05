@@ -16,12 +16,11 @@ describes where that category's assets are emitted.
   "rules": {
     "root": "./.opencode/rules",
     "imports": [
-      "code-style",
       {
-        "name": "security",
-        "rename": "secrets",
-        "destination": "base",
-        "injections": { "frontmatter": { "owner": "sec" } }
+        "name": "conventional-commits",
+        "rename": "commits",
+        "destination": "conventions",
+        "injections": { "frontmatter": { "owner": "platform" } }
       }
     ],
     "injections": {
@@ -33,7 +32,9 @@ describes where that category's assets are emitted.
         }
       ]
     }
-  }
+  },
+  "skills": { "root": "./.opencode/skills", "imports": ["tdd"] },
+  "agents": { "root": "./.opencode/agents", "imports": ["code-reviewer"] }
 }
 ```
 
@@ -100,16 +101,18 @@ emitted bytes do not depend on key order in the config):
 
 ```markdown
 ---
-owner: sec
+owner: platform
 team: platform
 ---
 
 ## Summary
+
+Commit messages follow the Conventional Commits specification.
 ...
 ```
 
-from `category = { "team": "platform", "owner": "default" }` and
-`import = { "owner": "sec" }`. Applied to file assets and to a directory
+from `category = { "team": "platform" }` and
+`import = { "owner": "platform" }`. Applied to file assets and to a directory
 asset's entry file; other
 files in a directory asset are copied verbatim.
 
@@ -150,9 +153,9 @@ asset's emitted directory:
 
 ```json
 [
-  { "category": "rules",  "name": "security",  "path": ".opencode/rules/security.md" },
-  { "category": "skills", "name": "migration", "path": ".opencode/skills/migration" },
-  { "category": "agents", "name": "build",     "path": ".opencode/agents/build.md" }
+  { "category": "rules",  "name": "conventional-commits", "path": ".opencode/rules/conventions/commits.md" },
+  { "category": "skills", "name": "tdd",                 "path": ".opencode/skills/tdd" },
+  { "category": "agents", "name": "code-reviewer",       "path": ".opencode/agents/code-reviewer.md" }
 ]
 ```
 
@@ -197,7 +200,7 @@ is greppable, and the `(from <category>/<name>)` attribution is dimmed.
 
   agentAssets = {
     enable = true;
-    config = { rules = { root = "./.opencode/rules"; imports = [ "security" ]; }; };
+    config = { rules = { root = "./.opencode/rules"; imports = [ "conventional-commits" ]; }; };
   };
 }
 ```

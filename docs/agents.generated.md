@@ -4,4 +4,4 @@
 
 | Agent | Excerpt |
 |---|---|
-| [`build.md`](../assets/agents/build.md) | Build specialist focused on compiling and verifying the project. |
+| [`code-reviewer.md`](../assets/agents/code-reviewer.md) | Sceptical reviewer of a proposed change: the last pair of eyes before code… |

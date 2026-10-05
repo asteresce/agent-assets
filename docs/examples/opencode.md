@@ -26,16 +26,15 @@ load the rules.
           rules = {
             root = "./.opencode/rules";
             imports = [
-              "code-style"
               {
-                name = "security";
-                rename = "secrets";
-                destination = "base";
-                injections.frontmatter.owner = "sec";
+                name = "conventional-commits";
+                rename = "commits";
+                destination = "conventions";
+                injections.frontmatter.owner = "platform";
               }
             ];
             injections = {
-              frontmatter = { team = "platform"; owner = "default"; };
+              frontmatter = { team = "platform"; };
               json = [{
                 file = "./opencode.json";
                 content.instructions = [ ".opencode/rules/**/*.md" ];
@@ -45,12 +44,12 @@ load the rules.
 
           skills = {
             root = "./.opencode/skills";
-            imports = [ "migration" ];
+            imports = [ "tdd" ];
           };
 
           agents = {
             root = "./.opencode/agents";
-            imports = [ "build" ];
+            imports = [ "code-reviewer" ];
           };
         };
       };
@@ -63,35 +62,35 @@ load the rules.
 ```
 .opencode/
   rules/
-    code-style.md
-    base/secrets.md
+    conventions/commits.md
   skills/
-    migration/
+    tdd/
       SKILL.md
-      rollback-checklist.md
+      checklist.md
   agents/
-    build.md
+    code-reviewer.md
 opencode.json      # merged, not overwritten
 agent-assets.lock  # one row per imported asset
 ```
 
-`base/secrets.md` shows the frontmatter layering — the per-import `owner`
-overrides the category `owner`, `team` comes from the category:
+`conventions/commits.md` shows the frontmatter layering — the per-import `owner`
+is joined by the category `team`:
 
 ```markdown
 ---
-owner: sec
+owner: platform
 team: platform
 ---
 
 ## Summary
 
-Rules for handling secrets and credentials safely.
+Commit messages follow the Conventional Commits specification.
 ...
 ```
 
-`migration/rollback-checklist.md` is a skill artifact: copied verbatim, no
-frontmatter. `opencode.json` is merged, so existing keys survive:
+`tdd/checklist.md` is a skill artifact: copied verbatim, no frontmatter. Only
+`tdd/SKILL.md`, the entry file, receives it. `opencode.json` is merged, so
+existing keys survive:
 
 ```json
 {
@@ -110,13 +109,13 @@ anything there that no import claims:
 
 ```
 .opencode/skills/
-  migration/          # ours -- one row in agent-assets.lock
+  tdd/                # ours -- one row in agent-assets.lock
   my-own-skill/       # yours -- never touched
 ```
 
-`my-own-skill/` survives syncs and survives dropping the `migration` import.
-Inside `migration/`, though, the asset is immutable after injection: a stray
-file added there is reported as `EXTRA` by `check` and removed by `sync`.
+`my-own-skill/` survives syncs and survives dropping the `tdd` import. Inside
+`tdd/`, though, the asset is immutable after injection: a stray file added
+there is reported as `EXTRA` by `check` and removed by `sync`.
 
 ## From there
 

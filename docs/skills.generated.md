@@ -4,4 +4,4 @@
 
 | Skill | Excerpt |
 |---|---|
-| [`migration/`](../assets/skills/migration/SKILL.md) | Guide for performing structured migrations safely and reversibly. |
+| [`tdd/`](../assets/skills/tdd/SKILL.md) | Test-driven development: write a failing test first, then the least code that… |

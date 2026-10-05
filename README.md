@@ -33,12 +33,14 @@ The engine is a plain script: it runs outside Nix against any checkout too.
         config = {
           rules = {
             root = "./.opencode/rules";
-            imports = [ "code-style" "security" ];
+            imports = [ "conventional-commits" ];
             injections.json = [{
               file = "./opencode.json";
               content.instructions = [ ".opencode/rules/**/*.md" ];
             }];
           };
+          skills = { root = "./.opencode/skills"; imports = [ "tdd" ]; };
+          agents = { root = "./.opencode/agents"; imports = [ "code-reviewer" ]; };
         };
       };
     };
@@ -54,7 +56,11 @@ nix run .#check    # exit 1 if anything drifted (use it in CI)
 
 ```bash
 cat > agent-assets.json <<'EOF'
-{ "rules": { "root": "./.opencode/rules", "imports": ["security"] } }
+{
+  "rules":  { "root": "./.opencode/rules",  "imports": ["conventional-commits"] },
+  "skills": { "root": "./.opencode/skills", "imports": ["tdd"] },
+  "agents": { "root": "./.opencode/agents", "imports": ["code-reviewer"] }
+}
 EOF
 path/to/agent-assets/bin/agent-assets sync
 ```
