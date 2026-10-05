@@ -18,23 +18,10 @@ Generated from [`spec.json`](../spec.json). To update, run `python3 scripts/gen-
 
 ## Asset sections
 
-### Rules
+Sections appear in the order listed. **Bold** sections are required; the others may be omitted. No other `##` sections are allowed.
 
-| Section |
-|---|
-| `## Summary` |
-| `## Guidelines` |
-
-### Skills
-
-| Section |
-|---|
-| `## Description` |
-| `## Steps` |
-
-### Agents
-
-| Section |
-|---|
-| `## Role` |
-| `## Instructions` |
+| Category | Sections |
+|---|---|
+| `rules` | **`Summary`** → `Scope` → **`Guidelines`** → `Exceptions` → `Examples` → `Rationale` → `References` |
+| `skills` | **`Description`** → `When to Use` → `Prerequisites` → `Inputs` → **`Steps`** → `Output` → `Verification` → `Pitfalls` → `Examples` → `Bundled Files` → `References` |
+| `agents` | **`Role`** → `When to Use` → `Inputs` → **`Instructions`** → `Constraints` → `Output` → `Examples` → `References` |

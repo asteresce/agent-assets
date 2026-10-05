@@ -9,8 +9,37 @@
     "skillEntry": "SKILL.md"
   },
   "headings": {
-    "rules": ["Summary", "Guidelines"],
-    "skills": ["Description", "Steps"],
-    "agents": ["Role", "Instructions"]
+    "rules": [
+      { "name": "Summary", "required": true },
+      { "name": "Scope" },
+      { "name": "Guidelines", "required": true },
+      { "name": "Exceptions" },
+      { "name": "Examples" },
+      { "name": "Rationale" },
+      { "name": "References" }
+    ],
+    "skills": [
+      { "name": "Description", "required": true },
+      { "name": "When to Use" },
+      { "name": "Prerequisites" },
+      { "name": "Inputs" },
+      { "name": "Steps", "required": true },
+      { "name": "Output" },
+      { "name": "Verification" },
+      { "name": "Pitfalls" },
+      { "name": "Examples" },
+      { "name": "Bundled Files" },
+      { "name": "References" }
+    ],
+    "agents": [
+      { "name": "Role", "required": true },
+      { "name": "When to Use" },
+      { "name": "Inputs" },
+      { "name": "Instructions", "required": true },
+      { "name": "Constraints" },
+      { "name": "Output" },
+      { "name": "Examples" },
+      { "name": "References" }
+    ]
   }
 }

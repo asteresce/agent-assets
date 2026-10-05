@@ -70,22 +70,27 @@ def render_reference(spec):
     ]
     for key, value in spec["defaults"].items():
         lines.append("| `defaults.%s` | `%s` |" % (key, value))
-    lines += ["", "## Asset sections", ""]
+    lines += [
+        "",
+        "## Asset sections",
+        "",
+        "Sections appear in the order listed. **Bold** sections are required; "
+        "the others may be omitted. No other `##` sections are allowed.",
+        "",
+        "| Category | Sections |",
+        "|---|---|",
+    ]
     for category, headings in spec["headings"].items():
-        lines += [
-            "### %s" % category.capitalize(),
-            "",
-            "| Section |",
-            "|---|",
+        cells = [
+            "**`%s`**" % h["name"] if h.get("required") else "`%s`" % h["name"]
+            for h in headings
         ]
-        for heading in headings:
-            lines.append("| `## %s` |" % heading)
-        lines.append("")
+        lines.append("| `%s` | %s |" % (category, " → ".join(cells)))
     return "\n".join(lines).rstrip("\n") + "\n"
 
 
 def render_catalog(category, spec):
-    first = spec["headings"][category][0]
+    first = spec["headings"][category][0]["name"]
     lines = [BANNER, "", "# %s" % category.capitalize(), "", "| %s | Excerpt |" % singular(category), "|---|---|"]
     for label, path in assets(category, spec):
         rel = path.relative_to(REPO).as_posix()

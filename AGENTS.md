@@ -38,15 +38,31 @@ file is missing, stale or stray.
    (`defaults.skillEntry`) plus artifacts.
 2. Keep the content provider-neutral: no frontmatter, no agent names, no
    references to where files land. All of that is injected by consumers.
-3. Keep the sections in the order `spec.json` declares for the category —
-   `nix flake check` enforces it.
+3. Use only the `##` sections `spec.json` declares for the category, in the
+   order it declares them. Required sections must be present and non-empty;
+   optional ones may be omitted. `nix flake check` enforces all of this and
+   rejects, for the asset (entry file, for a skill):
+   - an unknown, repeated or out-of-order `##` section;
+   - an h1 title, frontmatter, or any text before the first `##`;
+   - an empty section (a subheading alone is not content).
+
+   Subheadings (`###` and below) are free. Fenced code blocks are opaque, so
+   an example may contain headings of its own. Artifacts in a skill directory
+   are free-form.
 
 The category catalog regenerates itself (`python3 scripts/gen-docs.py`), so
 there is no listing to maintain.
 
-Adding a **category** is a new registry directory plus the matching config key
-in consumers — the engine infers file-vs-directory from the source layout and
-has no category list to edit.
+Changing the section vocabulary is a `spec.json` change: keep a heading's name
+and meaning the same across categories, never rename one in place (existing
+assets would break — add the new name, migrate, then remove the old), and
+regenerate the docs. Headings that only one agent understands (tool
+lists, model names, permissions) are provider-specific and belong in consumer
+frontmatter, not in an asset.
+
+Adding a **category** is a new registry directory, its section schema in
+`spec.json`, and the matching config key in consumers — the engine infers
+file-vs-directory from the source layout and has no category list to edit.
 
 ## Changing the engine
 
