@@ -1,19 +1,19 @@
+# The consumer-facing flake-parts module.
+#
+# Imported as `import ./flake-module.nix self`, so the program it emits runs
+# the package this flake builds. That is the whole point: the consumer's
+# `flake.lock` pins the revision, so the emitted bytes are a function of the
+# lock and nothing else. The engine is one self-contained binary; the wrapper
+# below only injects the subcommand and the resolved paths.
+self:
 { lib, config, ... }:
 
 let
-  # One declaration for every default and label; the engine and the docs
-  # generator read the same file. See spec.json.
+  # One declaration for every default and label; see spec.json.
   spec = builtins.fromJSON (builtins.readFile ./spec.json);
 
   cfg = config.agentAssets;
   isActive = cfg.enable && cfg.config != { };
-
-  # The package this flake ships: the engine, spec.json and the assets
-  # (`spec.defaults.assets`) live here. The standalone engine finds all three
-  # relative to itself; the apps pin them to this store path, which is the
-  # consumer's flake.lock-pinned revision of this flake.
-  package = ./.;
-  assets = "${package}/${spec.defaults.assets}";
 
   makeProgram = pkgs: name:
     let
@@ -21,28 +21,17 @@ let
         if builtins.isPath cfg.config
         then "${cfg.config}"
         else "${pkgs.writeText (builtins.baseNameOf spec.defaults.config) (builtins.toJSON cfg.config)}";
-      app = pkgs.writeShellApplication {
-        name = "${spec.name}-${name}";
-        runtimeInputs = [
-          pkgs.bash
-          pkgs.coreutils
-          pkgs.diffutils
-          pkgs.findutils
-          pkgs.gawk
-          pkgs.jq
-          pkgs.yq-go
-        ];
-        text = ''
-          exec ${pkgs.bash}/bin/bash ${package}/bin/agent-assets ${lib.escapeShellArg name} \
-            --config ${lib.escapeShellArg configJson} \
-            --assets ${lib.escapeShellArg assets} \
-            --manifest ${lib.escapeShellArg cfg.manifest} \
-            --project "''${PROJECT_ROOT:-$PWD}" \
-            "$@"
-        '';
-      };
+      package = self.packages.${pkgs.system}.default;
+      assets = "${package}/${spec.defaults.assets}";
     in
-    "${app}/bin/${spec.name}-${name}";
+    "${pkgs.writeShellScript "${spec.name}-${name}" ''
+      exec ${package}/bin/${spec.name} ${name} \
+        --config ${lib.escapeShellArg configJson} \
+        --assets ${lib.escapeShellArg assets} \
+        --manifest ${lib.escapeShellArg cfg.manifest} \
+        --project "''${PROJECT_ROOT:-$PWD}" \
+        "$@"
+    ''}";
 in
 {
   options.agentAssets = {

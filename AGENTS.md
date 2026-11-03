@@ -1,8 +1,8 @@
 # Contributing to agent-assets
 
 This repository ships provider-neutral agent assets and a small engine that
-emits them into consumer projects. It contains no agent-specific glue: what an
-agent is, and how it discovers files, is the consumer's business.
+emits them into consumer projects. It contains no agent-specific glue: what
+an agent is, and how it discovers files, is the consumer's business.
 
 ## Terminology
 
@@ -17,19 +17,16 @@ agent is, and how it discovers files, is the consumer's business.
 ## Declared values
 
 `spec.json` is the single source of truth for the package name, the defaults
-and the per-category section schema. The engine, the flake module, the tests
-and the docs generator all read it — never restate a value from it in code or
-in behaviour-bearing prose (option tables, flag defaults, CLI text); refer to
-the key instead (`defaults.manifest`, `defaults.skillEntry`, …). A snapshot of
-this repository's layout may name the directories; the reference stays the
+and the per-category section schema. The engine, the flake module and the
+tests all read it — never restate a value from it in code or in
+behaviour-bearing prose (option tables, flag defaults, CLI text); refer to
+the key instead (`defaults.manifest`, `defaults.skillEntry`, …). A snapshot
+of this repository's layout may name the directories; the reference stays the
 authority for the values.
 
-Generated documentation is only ever a whole file under `docs/`, named
-`<something>.generated.md`, produced by `scripts/gen-docs.py` from `spec.json`.
-Generated content is never embedded in a hand-written page, and generated files
-stay light; hand-written pages link to them. Regenerate with
-`python3 scripts/gen-docs.py`, and `nix flake check` fails if a `*.generated.md`
-file is missing, stale or stray.
+Documentation links to `spec.json` rather than restating values from it. The
+behavioural spec is one place — the "How it behaves" section of `README.md` —
+and the tests are its executable form.
 
 ## Adding an asset
 
@@ -40,8 +37,9 @@ file is missing, stale or stray.
    references to where files land. All of that is injected by consumers.
 3. Use only the `##` sections `spec.json` declares for the category, in the
    order it declares them. Required sections must be present and non-empty;
-   optional ones may be omitted. `nix flake check` enforces all of this and
-   rejects, for the asset (entry file, for a skill):
+   optional ones may be omitted. `cargo test` (and therefore `nix flake
+   check`) enforces all of this and rejects, for the asset (entry file, for a
+   skill):
    - an unknown, repeated or out-of-order `##` section;
    - an h1 title, frontmatter, or any text before the first `##`;
    - an empty section (a subheading alone is not content).
@@ -50,15 +48,15 @@ file is missing, stale or stray.
    an example may contain headings of its own. Artifacts in a skill directory
    are free-form.
 
-The category catalog regenerates itself (`python3 scripts/gen-docs.py`), so
-there is no listing to maintain.
+The category catalogs are plain directory listings — see
+`assets/*/README.md` — so there is no generated table to refresh.
 
 Changing the section vocabulary is a `spec.json` change: keep a heading's name
 and meaning the same across categories, never rename one in place (existing
-assets would break — add the new name, migrate, then remove the old), and
-regenerate the docs. Headings that only one agent understands (tool
-lists, model names, permissions) are provider-specific and belong in consumer
-frontmatter, not in an asset.
+assets would break — add the new name, migrate, then remove the old). Then
+regenerate nothing: the catalog is a listing. Headings that only one agent
+understands (tool lists, model names, permissions) are provider-specific and
+belong in consumer frontmatter, not in an asset.
 
 Adding a **category** is a new registry directory, its section schema in
 `spec.json`, and the matching config key in consumers — the engine infers
@@ -66,13 +64,15 @@ file-vs-directory from the source layout and has no category list to edit.
 
 ## Changing the engine
 
-The engine is `bin/agent-assets` (bash + jq + yq). New injections take pure
-data in the config schema and are implemented there; keep the core
-provider-agnostic and document the shape in `docs/api.md` with a worked
+The engine is `src/` — a Rust crate with a thin binary. New behaviour takes
+pure data in the config schema and is implemented in `plan`/`apply`; keep the
+core provider-agnostic and document the shape in `docs/api.md` with a worked
 example.
 
 Behavioural rules live in one place — `README.md`'s "How it behaves". Update
-that section rather than restating behaviour in other docs.
+that section rather than restating behaviour in other docs, and change the
+tests in `tests/integration.rs` in the same commit: that suite is the
+behaviour's executable specification.
 
 ## Constraints
 
@@ -87,9 +87,9 @@ that section rather than restating behaviour in other docs.
 ## Verifying
 
 ```bash
-nix flake check                              # integration suite + shellcheck
-python3 -m unittest discover -s tests -v     # same suite, needs jq and yq on PATH
+cargo test                              # behaviour suite + registry conformance
+nix flake check                         # the package build, which runs cargo test
 ```
 
-`tests/test_engine.py` drives the real script and is the executable
+`tests/integration.rs` drives the built binary and is the executable
 specification for the behaviour section. Extend it whenever behaviour changes.

@@ -1,9 +1,16 @@
 # Shared skills catalog
 
-These skills are provider-neutral. Consumers import them and adapt them for their agent.
+These skills are provider-neutral. Consumers import them and adapt them for
+their agent.
 
-Each skill is a directory containing a `SKILL.md` file and any artifacts it needs. A skill can be referenced in a config by its directory name.
+Each skill is a directory containing an entry file (`SKILL.md`) and any
+artifacts it needs, referenced in a config by its directory name.
 
-The catalog is generated: see [skills.generated.md](../../docs/skills.generated.md).
+- [`tdd/`](tdd/) — the red-green-refactor loop, its preconditions and its
+  pitfalls. Bundles [`checklist.md`](tdd/checklist.md).
 
-Add new skills here; the catalog regenerates itself.
+The sections a skill's entry file may carry are declared in
+[`spec.json`](../../spec.json) under `headings.skills`. Artifacts are
+free-form.
+
+Add new skills here; this listing is just the directory.

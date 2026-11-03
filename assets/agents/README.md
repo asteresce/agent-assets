@@ -1,9 +1,15 @@
 # Shared agents catalog
 
-These agent prompts are provider-neutral. Consumers import them and adapt them for their agent.
+These agent prompts are provider-neutral. Consumers import them and adapt
+them for their agent.
 
-Each agent can be referenced in a config by its file name without the `.md` extension.
+Each agent is a Markdown file, referenced in a config by its name without the
+`.md` extension.
 
-The catalog is generated: see [agents.generated.md](../../docs/agents.generated.md).
+- [`code-reviewer.md`](code-reviewer.md) — a sceptical review of a proposed
+  change, ordered by severity.
 
-Add new agents here; the catalog regenerates itself.
+The sections an agent prompt may carry are declared in
+[`spec.json`](../../spec.json) under `headings.agents`.
+
+Add new agents here; this listing is just the directory.

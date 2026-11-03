@@ -1,3 +1,8 @@
 __pycache__/
 *.pyc
 .opencode/
+
+
+# Added by cargo
+
+/target

@@ -1,9 +1,15 @@
 # Shared rules catalog
 
-These rules are provider-neutral. Consumers import them and adapt them for their agent.
+These rules are provider-neutral. Consumers import them and adapt them for
+their agent.
 
-Each rule can be referenced in a config by its file name without the `.md` extension.
+Each rule is a Markdown file, referenced in a config by its name without the
+`.md` extension.
 
-The catalog is generated: see [rules.generated.md](../../docs/rules.generated.md).
+- [`conventional-commits.md`](conventional-commits.md) — commit message
+  format and the reasoning behind it.
 
-Add new rules here; the catalog regenerates itself.
+The sections a rule may carry are declared in [`spec.json`](../../spec.json)
+under `headings.rules`.
+
+Add new rules here; this listing is just the directory.

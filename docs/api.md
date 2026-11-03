@@ -1,10 +1,11 @@
 # Reference
 
-Behavioural semantics (ownership, orphans, drift, idempotence) are described
-once, in [README — How it behaves](../README.md#how-it-behaves). This page is
-the data and interface reference: what the keys and flags *mean*. The values
-are not stated here — [reference.generated.md](reference.generated.md) is
-generated from [`spec.json`](../spec.json) and is the only place they appear.
+Behavioural semantics — ownership, orphans, drift, conflicts, idempotence —
+are described once, in [README — How it behaves](../README.md#how-it-behaves).
+This page is the data and interface reference: what the keys and flags *mean*.
+The values are not stated here: [`spec.json`](../spec.json) is the declared
+source for the name, the defaults and the per-category section schemas, and
+this page refers to those keys instead of repeating them.
 
 ## Config
 
@@ -28,7 +29,7 @@ describes where that category's assets are emitted.
       "json": [
         {
           "file": "./opencode.json",
-          "content": { "instructions": [ ".opencode/rules/**/*.md" ] }
+          "content": { "instructions": [".opencode/rules/**/*.md"] }
         }
       ]
     }
@@ -39,12 +40,14 @@ describes where that category's assets are emitted.
 ```
 
 Category names are not a fixed set — see [Format inference](#format-inference).
+Unknown keys are rejected anywhere in the document, and every error names the
+JSON path it is about: `rules.imports[1].rename: …`.
 
 ### Category
 
 | Key | Type | Meaning |
 |---|---|---|
-| `root` | string | output directory, project-relative; defaults to `defaults.rootPrefix` + the category name |
+| `root` | string | output directory, project-relative; defaults to `defaults.rootPrefix` + the category |
 | `imports` | array | assets to emit; defaults to none |
 | `injections` | object | category-wide transformations; defaults to none |
 
@@ -61,22 +64,21 @@ Either a string (shorthand for `{ "name": "<string>" }`) or an object:
 
 ### Format inference
 
-For each import the engine looks for `--assets/<category>/<name>.md` and then for
-`--assets/<category>/<name>/`:
+For each import the engine looks for `<category>/<name>.md` and then for
+`<category>/<name>/` in `--assets`:
 
 - `<name>.md` found — a **file asset**, emitted to
   `<root>/<destination>/<rename>.md`.
 - `<name>/` found — a **directory asset** (a skill), emitted to
   `<root>/<destination>/<rename>/`. Every file in the source is copied;
   `defaults.skillEntry` is the entry file and is the one that receives
-  frontmatter, the
-  rest are artifacts and are copied verbatim.
+  frontmatter, the rest are artifacts and are copied verbatim.
 - neither — the run fails naming both paths it tried.
 
-A source that is neither is an error, so typos in `name` fail loudly instead
-of emitting nothing. The directory is a skill directory; its entry file
-(`defaults.skillEntry`) is the
-one stated format convention of the registry.
+A source that is both is an error, so a typo fails loudly instead of
+silently picking one shape. The directory is a skill directory; its entry
+file (`defaults.skillEntry`) is the one stated format convention of the
+registry.
 
 ## Injections
 
@@ -113,15 +115,18 @@ Commit messages follow the Conventional Commits specification.
 
 from `category = { "team": "platform" }` and
 `import = { "owner": "platform" }`. Applied to file assets and to a directory
-asset's entry file; other
-files in a directory asset are copied verbatim.
+asset's entry file; other files in a directory asset are copied verbatim.
+
+An empty map emits no block at all — but it still strips whatever the source
+carried, because frontmatter is the consumer's to decide.
 
 ### `json`
 
-Ensures static content is present in a JSON file you own (typically the agent's
-own config). Entries are `{ "file": <project-relative path>, "content": <object> }`.
-Chunks from every category that target the same file are combined first, then
-merged into the target:
+Ensures static content is present in a JSON file you own (typically the
+agent's own config). Entries are
+`{ "file": <project-relative path>, "content": <object> }`. Chunks from every
+category that target the same file are combined first, then merged into the
+target:
 
 - **objects** — key-wise merge; keys only the target has are kept.
 - **arrays** — union: the target's items and order are kept, chunk items not
@@ -140,29 +145,55 @@ into `{ "user_key": true, "nested": {"b": 2} }` yields:
 ```
 
 The target is created if missing and must be a JSON object if present
-(invalid JSON fails the run). Targets are **not** recorded in the manifest and
-are never deleted; `check` reports `INJECT` whenever merging would still
-change the file.
+(invalid JSON fails the run). Targets are **not** recorded in the manifest
+and are never deleted; `check` reports `INJECT` whenever merging would still
+change the file. A target that collides with a rendered asset path fails the
+run before anything is written.
 
 ## Manifest
 
 The manifest lives at `defaults.manifest` (path configurable). Written by
-`sync`, read by `check`.
-**One entry per imported asset** — a file asset's emitted file, a directory
-asset's emitted directory:
+`sync`, read by `check`. One entry per **imported asset** — a file asset's
+emitted file, a directory asset's emitted directory — with the SHA-256 of
+every file rendered inside it:
 
 ```json
 [
-  { "category": "rules",  "name": "conventional-commits", "path": ".opencode/rules/conventions/commits.md" },
-  { "category": "skills", "name": "tdd",                 "path": ".opencode/skills/tdd" },
-  { "category": "agents", "name": "code-reviewer",       "path": ".opencode/agents/code-reviewer.md" }
+  {
+    "path": ".opencode/rules/conventional-commits.md",
+    "files": [
+      { "path": ".opencode/rules/conventional-commits.md", "hash": "sha256:…" }
+    ]
+  },
+  {
+    "path": ".opencode/skills/tdd",
+    "files": [
+      { "path": ".opencode/skills/tdd/SKILL.md", "hash": "sha256:…" },
+      { "path": ".opencode/skills/tdd/checklist.md", "hash": "sha256:…" }
+    ]
+  }
 ]
 ```
 
-No hashes: drift is computed by re-rendering and comparing bytes. The manifest
-is what makes an asset ours — those paths may be overwritten or deleted, and
-anything inside a listed directory is ours to keep exactly as rendered.
-Anything else under the category `root` is untouched.
+The hash is of the **rendered** bytes, not of the source, so an injection
+change shows up too. Rows and files are sorted by path, so the manifest's
+bytes do not depend on the order imports happened to be written in.
+
+The manifest is what makes a path ours — those paths may be overwritten or
+deleted, and anything inside a listed directory is ours to keep exactly as
+rendered. Anything else under the category `root` is untouched.
+
+### What the hash decides
+
+Comparing the disk against the manifest separates two very different
+situations — see
+[README — Drift and conflicts](../README.md#drift-and-conflicts):
+
+| disk vs render | manifest hash vs disk | verdict |
+|---|---|---|
+| equal | anything | clean |
+| differs | equal | `UPDATE` — the registry moved on |
+| differs | differs (or absent) | `CONFLICT` — somebody edited it |
 
 ## CLI
 
@@ -175,22 +206,25 @@ agent-assets check
 | Flag | Meaning |
 |---|---|
 | `--config FILE` | config path (default `defaults.config`) |
-| `--assets DIR` | asset registry root (default: this package's `defaults.assets`) |
+| `--assets DIR` | asset registry root (default: the one shipped with this binary) |
 | `--project DIR` | project root to reconcile (default `defaults.project`) |
 | `--manifest PATH` | manifest, relative to `--project` (default `defaults.manifest`) |
 | `--out DIR` | destination tree (`render` only) |
+| `--force` | replace files the manifest cannot vouch for (`sync` only) |
+| `--color WHEN` | `auto`, `always` or `never`; `NO_COLOR` is honoured |
 
-Default values are in [reference.generated.md](reference.generated.md).
+`--project` may be omitted: the engine walks up from the current directory
+looking for the declared config basename, the way `git` finds its repository
+root.
 
-Output tokens: `check` prints `MISSING`, `DRIFT`, `EXTRA`, `ORPHAN`, `INJECT`
-(`EXTRA` is a file inside a managed asset directory that was not rendered;
-`DRIFT` also covers a path holding the wrong kind of thing — a symlink, or a
-directory where a file belongs);
-`sync` prints `WRITE`, `UPDATE`, `REMOVE`, `MERGE`. Both are silent when there
-is nothing to say. `render` writes the expected tree and touches nothing else.
-Status words are coloured on a terminal (`NO_COLOR` and
-`AGENT_ASSETS_COLOR=always|never` are honoured); paths stay plain so the output
-is greppable, and the `(from <category>/<name>)` attribution is dimmed.
+Output tokens: `check` prints `MISSING`, `DRIFT`, `EXTRA`, `ORPHAN`,
+`INJECT`, `CONFLICT`; `sync` prints `WRITE`, `UPDATE`, `REMOVE`, `MERGE`, and
+`CONFLICT` for the ones it refused to touch. Both are silent when there is
+nothing to say. `render` writes the expected tree and touches nothing else —
+no manifest, no JSON injections, no project.
+
+Status words are coloured on a terminal; paths stay plain so the output is
+greppable, and the `(from <category>/<name>)` attribution is dimmed.
 
 ## Nix module
 
@@ -221,6 +255,11 @@ nix run .#sync
 nix run .#check
 ```
 
-Both run with `--assets` pinned to this flake's store path (your `flake.lock`
-revision) and `--project` set to `$PROJECT_ROOT`, falling back to `$PWD`. Extra
-arguments after `--` are forwarded to the engine.
+Both run the package **this flake builds**, with `--assets` pointed at this
+flake's registry and `--project` set to `$PROJECT_ROOT`, falling back to
+`$PWD`. Extra arguments after `--` are forwarded to the engine. Because the
+program is this flake's own binary, emitted bytes depend on your `flake.lock`
+and nothing else — the consumer's nixpkgs cannot drift them.
+
+The flake also exposes `packages.default` (the engine), and
+`apps.{sync,check,render}` for running it outside a module.

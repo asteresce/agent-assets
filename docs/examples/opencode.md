@@ -70,11 +70,11 @@ load the rules.
   agents/
     code-reviewer.md
 opencode.json      # merged, not overwritten
-agent-assets.lock  # one row per imported asset
+agent-assets.lock  # one row per imported asset, with hashes
 ```
 
-`conventions/commits.md` shows the frontmatter layering — the per-import `owner`
-is joined by the category `team`:
+`conventions/commits.md` shows the frontmatter layering — the per-import
+`owner` is joined by the category `team`:
 
 ```markdown
 ---
@@ -109,8 +109,8 @@ anything there that no import claims:
 
 ```
 .opencode/skills/
-  tdd/                # ours -- one row in agent-assets.lock
-  my-own-skill/       # yours -- never touched
+  tdd/                # ours — one row in agent-assets.lock
+  my-own-skill/       # yours — never touched
 ```
 
 `my-own-skill/` survives syncs and survives dropping the `tdd` import. Inside
@@ -120,7 +120,7 @@ there is reported as `EXTRA` by `check` and removed by `sync`.
 ## From there
 
 ```bash
-nix run .#check   # clean now; exits 1 if anyone edits a managed file
+nix run .#check   # clean now; exits 1 if anything drifts
 ```
 
 `opencode.json` is deliberately not owned — the manifest never lists it, so
@@ -129,3 +129,24 @@ the absence of the injected keys is reported, as `INJECT`.
 
 To drop an asset later, remove it from `imports` and run `nix run .#sync`: its
 path is deleted as a whole (a file, or a directory asset's entire directory).
+
+## If somebody edits a managed file
+
+Emitted files are outputs, so a hand edit is not merged with the render. The
+manifest remembers what the last sync intended to find on disk, and that is
+what separates the two cases:
+
+- the file matches what we last wrote and no longer matches the render → the
+  registry moved on; `sync` rewrites it.
+- the file matches nothing we wrote → somebody edited it. `sync` reports
+  `CONFLICT` and leaves it alone.
+
+```bash
+nix run .#check          # CONFLICT .opencode/rules/conventions/commits.md (from rules/conventional-commits)
+nix run .#sync           # reports CONFLICT and exits 1; the edit survives
+nix run .#sync -- --force   # now it is an UPDATE, and the render wins
+```
+
+Decide deliberately: either keep the edit by dropping the import (the file
+then becomes an orphan and is deleted — so move it somewhere unmanaged
+first), or let the render win with `--force`.
