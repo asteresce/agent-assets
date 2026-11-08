@@ -9,14 +9,11 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use serde_json::Value;
-
 use agent_assets::cli::{self, Cli, Command};
 use agent_assets::config::{Config, RelPath};
 use agent_assets::manifest::{self, Manifest};
 use agent_assets::plan;
 use agent_assets::registry::{Asset, AssetKind, Registry};
-use agent_assets::render;
 use agent_assets::report::{self, Reporter, Status};
 use agent_assets::spec::Spec;
 
@@ -64,7 +61,7 @@ fn run() -> Result<u8, String> {
             } else {
                 None
             };
-            show(&registry, target, project.as_ref())
+            show(&registry, &spec, target, project.as_ref())
         }
 
         Command::Render { out } => {
@@ -224,18 +221,29 @@ fn list(registry: &Registry) -> Result<u8, String> {
     Ok(0)
 }
 
-/// `show` prints one asset: its source, or the form `sync` would write.
-fn show(registry: &Registry, target: &str, project: Option<&Project>) -> Result<u8, String> {
+/// `show` prints one asset: its source, or the files `sync` would write for it.
+fn show(
+    registry: &Registry,
+    spec: &Spec,
+    target: &str,
+    project: Option<&Project>,
+) -> Result<u8, String> {
     let (category, name) = cli::split_target(target)?;
     let asset = registry.load(category, name)?;
 
     let files: Vec<(PathBuf, Vec<u8>)> = match project {
+        // `--rendered` is the emitted reality: every file `sync` would write
+        // for this asset, wherever it lands. The planner resolves it, so the
+        // placement, the frontmatter and the refusals are `sync`'s own
+        // answers rather than a second implementation of them.
         Some(project) => {
-            let frontmatter = frontmatter_for(&project.config, category, name);
-            match render::render_asset(&asset, &frontmatter)? {
-                render::Rendered::File(bytes) => vec![(PathBuf::new(), bytes)],
-                render::Rendered::Dir(entries) => entries,
+            let files = plan::renders_for(&project.config, registry, spec, category, name)?;
+            if files.is_empty() {
+                return Err(format!(
+                    "{target} is not imported; nothing would be written"
+                ));
             }
+            files
         }
         None => match &asset {
             Asset::File(file) => vec![(PathBuf::new(), file.bytes.clone())],
@@ -246,21 +254,10 @@ fn show(registry: &Registry, target: &str, project: Option<&Project>) -> Result<
     page(&blocks(&files))
 }
 
-/// The frontmatter `sync` would inject: the category's, then the first import
-/// naming the asset — the one whose output the reader is looking at.
-fn frontmatter_for(config: &Config, category: &str, name: &str) -> BTreeMap<String, Value> {
-    let Some(entry) = config.get(category) else {
-        return BTreeMap::new();
-    };
-    let mut out = entry.injections.frontmatter.clone();
-    if let Some(import) = entry.imports.iter().find(|i| i.name.as_str() == name) {
-        out.extend(import.injections.frontmatter.clone());
-    }
-    out
-}
-
 /// One asset as something to read: a single document, or every file behind a
-/// `==> <rel> <==` header the way `head` and `tar` separate them.
+/// `==> <path> <==` header the way `head` and `tar` separate them. The path
+/// is whatever namespace the caller used — registry-relative for a source,
+/// output-relative for a render.
 fn blocks(files: &[(PathBuf, Vec<u8>)]) -> Vec<u8> {
     if files.len() == 1 {
         return files[0].1.clone();

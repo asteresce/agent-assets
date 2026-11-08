@@ -236,9 +236,10 @@ root that nobody owns — yours, and never touched.
 
 `list` names every importable asset in the registry with its kind, size and
 summary, and closes with totals per category. `show <category>/<name>`
-prints one asset — the source by default, or `--rendered` for what `sync`
-would write. Both read the registry alone and need no project, so they work
-wherever the binary lands.
+prints one asset: the source by default, or `--rendered` for every file
+`sync` would write for it, each named by where it lands. An asset imported
+twice is two answers, not an error; an asset nobody imports errors, because
+`sync` would write nothing. `list` and a bare `show` need no project at all.
 
 ## The registry
 

@@ -1147,8 +1147,8 @@ fn show_prints_a_directory_asset_behind_headers() {
     ));
 }
 
-/// The rendered form is what `sync` would write: the category's frontmatter,
-/// then the first import naming the asset.
+/// The rendered form is what `sync` would write, resolved by the planner:
+/// the category's frontmatter with the import's on top.
 #[test]
 fn show_rendered_applies_the_injected_frontmatter() {
     let world = World::fixture();
@@ -1160,6 +1160,55 @@ fn show_rendered_applies_the_injected_frontmatter() {
         .run(&["show", "--rendered", "rules/code-style"])
         .ok()
         .stdout_is(&format!("{STYLE_FM}{CODE_STYLE}"));
+}
+
+/// An asset emitted twice is two answers, not an error: `show --rendered`
+/// shows every file `sync` would write for it, each named by where it lands.
+#[test]
+fn show_rendered_prints_every_emitted_variant() {
+    let world = World::fixture();
+    let mut config = base_config();
+    config["rules"]["imports"] = json!([
+        {"name": "security", "rename": "sec-a",
+         "injections": {"frontmatter": {"owner": "a"}}},
+        {"name": "security", "rename": "sec-b",
+         "injections": {"frontmatter": {"owner": "b"}}}
+    ]);
+    world.write_config(&config);
+
+    world
+        .run(&["show", "--rendered", "rules/security"])
+        .ok()
+        .stdout_is(&format!(
+            "==> .opencode/rules/sec-a.md <==\n---\nowner: a\nteam: platform\n---\n\n{SECURITY}\n\
+             ==> .opencode/rules/sec-b.md <==\n---\nowner: b\nteam: platform\n---\n\n{SECURITY}\n"
+        ));
+}
+
+/// The header names where the file lands, not what the registry calls it —
+/// that is the question `--rendered` answers.
+#[test]
+fn show_rendered_names_where_each_file_lands() {
+    let world = World::fixture();
+    world
+        .run(&["show", "--rendered", "skills/tdd"])
+        .ok()
+        .stdout_is(&format!(
+            "==> .opencode/skills/tdd/SKILL.md <==\n{SKILL_MD}\n\
+             ==> .opencode/skills/tdd/checklist.md <==\n{CHECKLIST}\n"
+        ));
+}
+
+/// `sync` writes nothing for an asset nobody imports, so neither does the
+/// preview of it.
+#[test]
+fn show_rendered_refuses_an_asset_that_is_not_imported() {
+    let world = World::fixture();
+    world.write_asset("rules/pacing.md", "## Summary\n\nSlow down.\n");
+    world
+        .run(&["show", "--rendered", "rules/pacing"])
+        .fails()
+        .stderr_contains("not imported");
 }
 
 /// The source is in the binary; the rendered form depends on the project's

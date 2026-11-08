@@ -222,10 +222,12 @@ root.
 
 `list` and `show` read the registry alone — no project, no config — so they
 work wherever the binary lands. `show` prints the source; `--rendered`
-prints what `sync` would write and is the only form that needs a config. A
-directory asset prints every file behind a `==> <rel> <==` header. Output
-goes through `bat`, then `less`, then `cat` on a terminal, and straight out
-otherwise so `show` still composes with a pipe.
+prints every file `sync` would write for that asset, and is the only form
+that needs a config. An asset imported twice is two answers: each file is
+printed behind a `==> <output path> <==` header, so the preview and the tree
+cannot disagree. An asset nobody imports errors, because `sync` would write
+nothing. Output goes through `bat`, then `less`, then `cat` on a terminal,
+and straight out otherwise so `show` still composes with a pipe.
 
 `status` is `check` without the filter and always exits 0.
 

@@ -292,6 +292,26 @@ pub fn expected_tree(
     Ok(tree_of(&resolve(config, registry, spec)?))
 }
 
+/// Every file `sync` would write for one asset, across all its imports, in
+/// config order: `(output path, rendered bytes)`.
+///
+/// This is [`resolve`] filtered to one asset, so the placement, the
+/// frontmatter merge and the collision refusal are the same code `sync`
+/// runs. An asset imported twice is two answers, not an error.
+pub fn renders_for(
+    config: &Config,
+    registry: &Registry,
+    spec: &Spec,
+    category: &str,
+    name: &str,
+) -> Result<Vec<(PathBuf, Vec<u8>)>, String> {
+    Ok(resolve(config, registry, spec)?
+        .iter()
+        .filter(|asset| asset.origin.category == category && asset.origin.name == name)
+        .flat_map(|asset| asset.files.iter().cloned())
+        .collect())
+}
+
 /// One import, rendered and placed.
 struct Resolved {
     origin: Origin,
