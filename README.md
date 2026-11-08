@@ -24,7 +24,7 @@ Get the binary. From the
 `SHA256SUMS`, and put `agent-assets` on your `PATH`:
 
 ```bash
-version=0.1.0 target=x86_64-unknown-linux-musl
+version=0.1.1 target=x86_64-unknown-linux-musl
 base=https://github.com/asteresce/agent-assets/releases/download/v$version
 curl -fsSLO "$base/agent-assets-$version-$target.tar.gz"
 curl -fsSLO "$base/SHA256SUMS"
