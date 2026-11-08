@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 use serde_json::Value;
 
 use crate::config::Config;
-use crate::files::guard_ancestors;
+use crate::files::{self, guard_ancestors};
 use crate::manifest::{self, Manifest, hash_bytes};
 use crate::merge;
 use crate::registry::{AssetKind, Registry};
@@ -630,16 +630,13 @@ fn collect_strays(
     expected: &BTreeSet<&Path>,
     found: &mut Vec<PathBuf>,
 ) -> Result<(), String> {
-    let entries = std::fs::read_dir(absolute)
-        .map_err(|e| format!("cannot read {}: {e}", absolute.display()))?;
-    for entry in entries {
-        let entry = entry.map_err(|e| format!("cannot read {}: {e}", absolute.display()))?;
-        let name = entry.file_name();
+    for name in files::read_dir(absolute)? {
         let child_relative = relative.join(&name);
-        let metadata = std::fs::symlink_metadata(entry.path())
-            .map_err(|e| format!("cannot inspect {}: {e}", entry.path().display()))?;
-        if metadata.file_type().is_dir() {
-            collect_strays(&entry.path(), &child_relative, expected, found)?;
+        let child_absolute = absolute.join(&name);
+        // Anything that is not a directory is a stray, symlinks included: a
+        // link inside a managed asset is something we did not render.
+        if files::is_real_dir(&child_absolute)? {
+            collect_strays(&child_absolute, &child_relative, expected, found)?;
         } else if !expected.contains(child_relative.as_path()) {
             found.push(child_relative);
         }
@@ -682,10 +679,10 @@ fn custom_files(
     let mut found = Vec::new();
     for root in roots {
         let absolute = project_root.join(&root);
-        if !is_real_dir(&absolute) {
+        if !files::is_real_dir(&absolute)? {
             continue;
         }
-        collect_custom(&absolute, &root, &mut found)?;
+        files::walk_files(&absolute, &root, &mut found)?;
     }
     found.retain(|path| {
         !owned
@@ -695,31 +692,6 @@ fn custom_files(
     found.sort();
     found.dedup();
     Ok(found)
-}
-
-/// Every real file under `absolute`, as `relative`-rooted paths. Symlinks are
-/// skipped rather than followed: a link out of the project is not a file of
-/// the project's.
-fn collect_custom(absolute: &Path, relative: &Path, out: &mut Vec<PathBuf>) -> Result<(), String> {
-    let entries = std::fs::read_dir(absolute)
-        .map_err(|e| format!("cannot read {}: {e}", absolute.display()))?;
-    for entry in entries {
-        let entry = entry.map_err(|e| format!("cannot read {}: {e}", absolute.display()))?;
-        let child_relative = relative.join(entry.file_name());
-        let metadata = std::fs::symlink_metadata(entry.path())
-            .map_err(|e| format!("cannot inspect {}: {e}", entry.path().display()))?;
-        let file_type = metadata.file_type();
-        if file_type.is_file() {
-            out.push(child_relative);
-        } else if file_type.is_dir() {
-            collect_custom(&entry.path(), &child_relative, out)?;
-        }
-    }
-    Ok(())
-}
-
-fn is_real_dir(absolute: &Path) -> bool {
-    std::fs::symlink_metadata(absolute).is_ok_and(|m| m.file_type().is_dir())
 }
 
 // --------------------------------------------------------------- projections

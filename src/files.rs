@@ -1,12 +1,15 @@
-//! Writing into the project tree: atomically, and never through a symlink.
+//! The filesystem discipline: how anything is read from, or written to, the
+//! project tree.
 //!
-//! Everything that mutates a file goes through here. The two rules this
-//! module enforces are the ones that make a sync safe to run unattended:
+//! Everything that mutates a file goes through here, and so does every walk
+//! that decides what is there. The two rules this module enforces are the
+//! ones that make a sync safe to run unattended:
 //!
 //! * a write is atomic — a reader sees either the old content or the new,
 //!   never half of either;
 //! * no path between the project root and the leaf is a symlink, so a write
-//!   can never land outside the project.
+//!   can never land outside the project, and a walk never reads through a
+//!   link to somewhere else.
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -72,6 +75,58 @@ pub fn guard_ancestors(
                 "refusing to write through {} which is not a directory",
                 absolute.display()
             ));
+        }
+    }
+    Ok(())
+}
+
+/// The names in `dir`, sorted. An unreadable directory is an error: a tree
+/// that cannot be listed is a tree that cannot be trusted.
+pub fn read_dir(dir: &Path) -> Result<Vec<String>, String> {
+    let entries =
+        std::fs::read_dir(dir).map_err(|e| format!("cannot read {}: {e}", dir.display()))?;
+    let mut out = Vec::new();
+    for entry in entries {
+        let entry = entry.map_err(|e| format!("cannot read {}: {e}", dir.display()))?;
+        out.push(entry.file_name().to_string_lossy().into_owned());
+    }
+    out.sort();
+    Ok(out)
+}
+
+/// True when `path` is a real file — not a symlink, not a directory. A path
+/// that is not there is simply not one.
+pub fn is_real_file(path: &Path) -> Result<bool, String> {
+    Ok(kind_of(path)?.is_some_and(|file_type| file_type.is_file()))
+}
+
+pub fn is_real_dir(path: &Path) -> Result<bool, String> {
+    Ok(kind_of(path)?.is_some_and(|file_type| file_type.is_dir()))
+}
+
+/// The kind of thing at `path`, following no link. `None` when nothing is
+/// there.
+fn kind_of(path: &Path) -> Result<Option<std::fs::FileType>, String> {
+    match std::fs::symlink_metadata(path) {
+        Ok(metadata) => Ok(Some(metadata.file_type())),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(format!("cannot inspect {}: {e}", path.display())),
+    }
+}
+
+/// Every regular file under `absolute`, as paths relative to `relative`.
+///
+/// Symlinks are skipped rather than followed: a link is not content the
+/// engine should copy, and following one could read outside the tree
+/// entirely.
+pub fn walk_files(absolute: &Path, relative: &Path, out: &mut Vec<PathBuf>) -> Result<(), String> {
+    for name in read_dir(absolute)? {
+        let child = relative.join(&name);
+        let path = absolute.join(&name);
+        if is_real_file(&path)? {
+            out.push(child);
+        } else if is_real_dir(&path)? {
+            walk_files(&path, &child, out)?;
         }
     }
     Ok(())

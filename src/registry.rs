@@ -13,6 +13,7 @@
 use std::path::{Path, PathBuf};
 
 use crate::config::Name;
+use crate::files;
 use crate::spec::Spec;
 
 /// Which shape a registry entry has.
@@ -305,8 +306,11 @@ impl Registry {
                         entry_path.display()
                     ));
                 }
+                let mut paths = Vec::new();
+                files::walk_files(&dir_path, Path::new(""), &mut paths)?;
+                paths.sort();
                 let mut files = Vec::new();
-                for relative in walk_files(&dir_path)? {
+                for relative in paths {
                     let absolute = dir_path.join(&relative);
                     files.push((relative, read_bytes(&absolute)?));
                 }
@@ -362,16 +366,16 @@ impl Registry {
 /// content. A file asset is `<stem>.md`; a directory asset is a directory.
 fn names_of(root: &Path) -> Result<Vec<(String, String)>, String> {
     let mut out = Vec::new();
-    for category in read_dir(root)? {
+    for category in files::read_dir(root)? {
         let category_dir = root.join(&category);
-        if !is_real_dir(&category_dir) {
+        if !files::is_real_dir(&category_dir)? {
             continue;
         }
-        for child in read_dir(&category_dir)? {
+        for child in files::read_dir(&category_dir)? {
             let path = category_dir.join(&child);
-            if is_real_dir(&path) {
+            if files::is_real_dir(&path)? {
                 out.push((category.clone(), child));
-            } else if is_real_file(&path) {
+            } else if files::is_real_file(&path)? {
                 let Some(stem) = child.strip_suffix(".md") else {
                     continue;
                 };
@@ -380,58 +384,6 @@ fn names_of(root: &Path) -> Result<Vec<(String, String)>, String> {
         }
     }
     Ok(out)
-}
-
-/// Every regular file under `root`, as paths relative to `root`, sorted.
-///
-/// Symlinks are skipped rather than followed: a link inside the registry is
-/// not content the engine should copy, and following one could read outside
-/// the registry entirely.
-fn walk_files(root: &Path) -> Result<Vec<PathBuf>, String> {
-    let mut out = Vec::new();
-    collect(root, Path::new(""), &mut out)?;
-    out.sort();
-    Ok(out)
-}
-
-fn collect(root: &Path, rel: &Path, out: &mut Vec<PathBuf>) -> Result<(), String> {
-    let dir = if rel.as_os_str().is_empty() {
-        root.to_path_buf()
-    } else {
-        root.join(rel)
-    };
-    for name in read_dir(&dir)? {
-        let child_rel = rel.join(&name);
-        let path = dir.join(&name);
-        if is_real_file(&path) {
-            out.push(child_rel);
-        } else if is_real_dir(&path) {
-            collect(root, &child_rel, out)?;
-        }
-    }
-    Ok(())
-}
-
-/// The names in `dir`, sorted. An unreadable directory is an error: a
-/// registry that cannot be listed is a registry that cannot be trusted.
-fn read_dir(dir: &Path) -> Result<Vec<String>, String> {
-    let entries =
-        std::fs::read_dir(dir).map_err(|e| format!("cannot read {}: {e}", dir.display()))?;
-    let mut out = Vec::new();
-    for entry in entries {
-        let entry = entry.map_err(|e| format!("cannot read {}: {e}", dir.display()))?;
-        out.push(entry.file_name().to_string_lossy().into_owned());
-    }
-    out.sort();
-    Ok(out)
-}
-
-fn is_real_file(path: &Path) -> bool {
-    std::fs::symlink_metadata(path).is_ok_and(|m| m.file_type().is_file())
-}
-
-fn is_real_dir(path: &Path) -> bool {
-    std::fs::symlink_metadata(path).is_ok_and(|m| m.file_type().is_dir())
 }
 
 fn read_bytes(path: &Path) -> Result<Vec<u8>, String> {

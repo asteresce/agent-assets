@@ -11,7 +11,7 @@
 //! * [`manifest`] — what a sync owns, and what it last wrote.
 //! * [`plan`] — what the project needs.
 //! * [`check`] and [`apply`] — report it, or do it.
-//! * [`files`] — how anything is written at all.
+//! * [`files`] — how anything is read from, or written to, the tree.
 //! * [`cli`] and [`report`] — the arguments, and the lines we print.
 
 pub mod apply;
