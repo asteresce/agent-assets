@@ -5,17 +5,40 @@ puts them into a project tree: declarative, idempotent, and checkable in CI.
 
 ## What you get
 
-- `assets/` — a registry of shared Markdown assets, one directory per
-  category (`rules/`, `skills/`, `agents/`).
-- `agent-assets` — a single binary with `render`, `sync` and `check`.
+- `agent-assets` — one self-contained binary with `sync`, `check`, `render`,
+  `status`, `list` and `show`. The registry of shared assets is compiled
+  into it, so it runs anywhere with nothing installed beside it.
+- `assets/` — that registry's source, one directory per category (`rules/`,
+  `skills/`, `agents/`).
 - A flake-parts module wiring `nix run .#sync` and `nix run .#check`.
 
-The binary is self-contained: it runs anywhere, including outside Nix
-against any checkout, with nothing installed beside it.
+The engine targets Unix (Linux and macOS): its path-safety rules are Unix
+symlink semantics.
 
 ## Quick start
 
-Write a config that says which assets you import and where they go:
+Get the binary. From the
+[releases](https://github.com/asteresce/agent-assets/releases), pick
+`agent-assets-<version>-<target>.tar.gz` for your platform, check it against
+`SHA256SUMS`, and put `agent-assets` on your `PATH`:
+
+```bash
+version=0.1.0 target=x86_64-unknown-linux-musl
+base=https://github.com/asteresce/agent-assets/releases/download/v$version
+curl -fsSLO "$base/agent-assets-$version-$target.tar.gz"
+curl -fsSLO "$base/SHA256SUMS"
+sha256sum --check --ignore-missing SHA256SUMS
+tar xzf "agent-assets-$version-$target.tar.gz"
+```
+
+Or install it from source, which is one command and needs nothing else —
+the registry is in the binary:
+
+```bash
+cargo install agent-assets
+```
+
+Then write a config that says which assets you import and where they go:
 
 ```bash
 cat > agent-assets.json <<'EOF'
@@ -27,19 +50,16 @@ cat > agent-assets.json <<'EOF'
 EOF
 ```
 
-Then run the engine:
+And run the engine:
 
 ```bash
+agent-assets list     # what the registry holds
 agent-assets sync     # write the assets into the project
 agent-assets check    # exit 1 if anything drifted (use it in CI)
 ```
 
-Build it with `cargo build --release`, or run it straight from Nix with
-`nix run github:your-org/agent-assets#sync`. `cargo install --git` works
-too, with `--assets` pointing at a registry.
-
-`--assets` selects the registry — this package's `assets/`, or your own
-pinned checkout. Everything else defaults from
+`--assets` swaps in a different registry — your own, or a pinned checkout —
+without changing the binary. Everything else defaults from
 [`spec.json`](spec.json); see [the reference](docs/api.md).
 
 ## Quick start (Nix)
@@ -52,7 +72,7 @@ For a Nix consumer the flake module wires the same engine in, pinned by your
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     flake-parts.url = "github:hercules-ci/flake-parts";
-    agent-assets.url = "github:your-org/agent-assets";
+    agent-assets.url = "github:asteresce/agent-assets";
   };
 
   outputs = inputs@{ flake-parts, agent-assets, ... }:
@@ -96,7 +116,8 @@ the canonical description of both.
 `sync` records each imported asset in the manifest (`defaults.manifest`): one
 row per import, with the SHA-256 of every file it rendered. A file asset is
 its emitted file; a directory asset is its emitted directory. Only those
-paths are ever overwritten or deleted.
+paths are ever overwritten or deleted. A category's `README.md` is its
+catalog index, not an asset: it cannot be imported, so it is never owned.
 
 The hash is what lets the engine tell a **source change** from a **hand edit**.
 It is the memory of what the last run intended to find on disk: comparing the
@@ -178,17 +199,44 @@ when a particular import produced the file.
 | `UPDATE` | `sync` | a file we wrote before is rewritten |
 | `REMOVE` | `sync` | an owned path is deleted |
 | `MERGE` | `sync` | a JSON injection target is merged |
-| `MISSING` | `check` | a rendered file is not on disk |
-| `DRIFT` | `check` | the file on disk differs from the render, or is the wrong kind of thing |
+| `MISSING` | `check`, `status` | a rendered file is not on disk |
+| `DRIFT` | `check`, `status` | the file on disk differs from the render, or is the wrong kind of thing |
 | `CONFLICT` | both | the file differs and the manifest cannot vouch for it; `sync` skips it unless `--force` |
-| `EXTRA` | `check` | a file inside a managed asset directory that we did not render |
-| `ORPHAN` | `check` | an owned path the config no longer produces |
-| `INJECT` | `check` | a JSON injection target is not yet merged |
+| `EXTRA` | `check`, `status` | a file inside a managed asset directory that we did not render |
+| `ORPHAN` | `check`, `status` | an owned path the config no longer produces |
+| `INJECT` | `check`, `status` | a JSON injection target is not yet merged |
+| `CLEAN` | `status` | the file matches the render and the manifest vouches for it |
 
 `check` never modifies the project, by construction: it plans and reports,
 and only `sync` writes. `check` exits 1 when it reported anything. `sync`
 exits 1 only on the `CONFLICT` lines it left alone; everything else it
 prints is work it did.
+
+### `status`
+
+`status` is `check` without the filter: every path the run knows about,
+`CLEAN` included, then a tally. It always exits 0 — the state of the tree is
+information, not an error, the way `git status` is.
+
+```
+$ agent-assets status
+CLEAN .opencode/agents/build.md (from agents/build)
+CONFLICT .opencode/rules/security.md (from rules/security)
+...
+4 imports · 3 clean · 1 conflict · 2 custom files
+```
+
+An import counts once, as the worst of its files, so "clean" and "conflict"
+add up to the import count. The custom files are the ones under a category
+root that nobody owns — yours, and never touched.
+
+### `list` and `show`
+
+`list` names every importable asset in the registry with its kind, size and
+summary, and closes with totals per category. `show <category>/<name>`
+prints one asset — the source by default, or `--rendered` for what `sync`
+would write. Both read the registry alone and need no project, so they work
+wherever the binary lands.
 
 ## The registry
 
@@ -205,6 +253,10 @@ other file is an artifact and is copied verbatim. Each category fixes the
 sections its assets carry — the schemas live in
 [`spec.json`](spec.json) under `headings`.
 
+This registry is compiled into the binary, so `list` and `show` work with
+nothing on disk. `--assets` reads the same layout from a directory instead,
+which is how a consumer brings their own.
+
 Adding an asset is a Markdown file plus a line in the category `README.md`.
 Adding a category is a new directory in the registry plus the matching config
 key and section schema: the engine infers file-vs-directory from whether the
@@ -212,19 +264,36 @@ source is `<name>.md` or `<name>/`, so nothing else has to change.
 
 ## Pinning and updates
 
-The engine only ever reads `--assets`; it never contacts the network and has
-no notion of upstream HEAD.
+The engine never contacts the network and has no notion of upstream HEAD.
+The registry is compiled into the binary, so what lands in your tree is a
+function of the binary and nothing else.
 
-As a Nix consumer, `--assets` is the store path of the `agent-assets` flake
-input **as pinned by your `flake.lock`**. Upstream releases cannot change your
-tree, and `check` stays green across upstream evolution. Standalone users get
-the same property by pointing `--assets` at a pinned checkout (git submodule,
-vendored copy, or release tag).
+As a Nix consumer, that binary is the `agent-assets` flake input **as pinned
+by your `flake.lock`**. Upstream releases cannot change your tree, and
+`check` stays green across upstream evolution. Standalone users get the same
+property by pinning the release they install — a version number, or a
+checksum-verified download.
 
-Updating the assets is therefore a deliberate, reviewable act: move the pin
-(`nix flake update agent-assets`), run `nix run .#sync`, commit the diff.
-Emitted files carry no provenance markers — the pin lives in `flake.lock`, so
-they stay plain Markdown.
+Updating is therefore a deliberate, reviewable act: move the pin
+(`nix flake update agent-assets`, or install a newer release), run `sync`,
+commit the diff. Emitted files carry no provenance markers — the pin lives
+in `flake.lock` or in the version you installed, so they stay plain Markdown.
+
+`--assets` swaps in a different registry — your own, or a pinned checkout —
+without changing the binary.
+
+## Versions
+
+`Cargo.toml` holds the version, and a release is that number carried through
+three steps:
+
+1. set `version` in `Cargo.toml`;
+2. commit;
+3. tag that commit `v<version>`.
+
+A tag that is not the version in `Cargo.toml` fails the release build rather
+than shipping a mismatched binary. So the rule is short: **`Cargo.toml` →
+commit → tag `vX.Y.Z`**.
 
 ## Documentation
 
@@ -241,6 +310,7 @@ they stay plain Markdown.
 ## Project layout
 
 ```
+build.rs           # compiles assets/ into the binary
 src/               # the engine: config, registry, render, manifest, plan, apply
 tests/             # the behaviour suite, and registry conformance
 spec.json          # declared defaults and section schemas
@@ -248,5 +318,6 @@ assets/            # the shared registry: rules/, skills/, agents/
 docs/              # reference and examples
 flake.nix          # packages, apps, checks, flakeModules.default
 flake-module.nix   # the consumer-facing module
+.github/workflows/ # ci, and the release pipeline
 opencode.json      # tooling config for maintaining this repo (not public API)
 ```

@@ -198,9 +198,12 @@ situations — see
 ## CLI
 
 ```
-agent-assets render --out DIR
 agent-assets sync
 agent-assets check
+agent-assets status
+agent-assets render --out DIR
+agent-assets list
+agent-assets show <category>/<name> [--rendered]
 ```
 
 | Flag | Meaning |
@@ -217,11 +220,21 @@ agent-assets check
 looking for the declared config basename, the way `git` finds its repository
 root.
 
+`list` and `show` read the registry alone — no project, no config — so they
+work wherever the binary lands. `show` prints the source; `--rendered`
+prints what `sync` would write and is the only form that needs a config. A
+directory asset prints every file behind a `==> <rel> <==` header. Output
+goes through `bat`, then `less`, then `cat` on a terminal, and straight out
+otherwise so `show` still composes with a pipe.
+
+`status` is `check` without the filter and always exits 0.
+
 Output tokens: `check` prints `MISSING`, `DRIFT`, `EXTRA`, `ORPHAN`,
-`INJECT`, `CONFLICT`; `sync` prints `WRITE`, `UPDATE`, `REMOVE`, `MERGE`, and
-`CONFLICT` for the ones it refused to touch. Both are silent when there is
-nothing to say. `render` writes the expected tree and touches nothing else —
-no manifest, no JSON injections, no project.
+`INJECT`, `CONFLICT`; `status` prints those plus `CLEAN`; `sync` prints
+`WRITE`, `UPDATE`, `REMOVE`, `MERGE`, and `CONFLICT` for the ones it refused
+to touch. `check` and `sync` are silent when there is nothing to say.
+`render` writes the expected tree and touches nothing else — no manifest, no
+JSON injections, no project.
 
 Status words are coloured on a terminal; paths stay plain so the output is
 greppable, and the `(from <category>/<name>)` attribution is dimmed.

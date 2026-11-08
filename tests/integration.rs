@@ -1197,6 +1197,25 @@ fn show_rejects_a_target_that_is_not_a_category_and_a_name() {
         .stderr_contains("expected <category>/<name>");
 }
 
+/// A category's `README.md` documents the category; it is not an asset.
+#[test]
+fn a_catalog_index_is_not_an_asset() {
+    let world = World::fixture();
+    world.write_asset("rules/README.md", "# Rules\n");
+
+    let listed = world.run(&["list"]);
+    listed.ok();
+    assert!(!listed.stdout.contains("README"), "{:?}", listed.stdout);
+
+    world
+        .run(&["show", "rules/README"])
+        .fails()
+        .stderr_contains("catalog index");
+
+    world.write_config(&json!({"rules": {"root": "./r", "imports": ["README"]}}));
+    world.sync().fails().stderr_contains("catalog index");
+}
+
 /// `status` is `check` without the filter, and always exits 0 — the state of
 /// the tree is information, not an error.
 #[test]

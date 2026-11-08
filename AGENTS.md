@@ -87,9 +87,22 @@ behaviour's executable specification.
 ## Verifying
 
 ```bash
+cargo fmt --check                        # formatting, as CI runs it
+cargo clippy --all-targets -- -D warnings # lints, as CI runs them
 cargo test                              # behaviour suite + registry conformance
 nix flake check                         # the package build, which runs cargo test
 ```
 
 `tests/integration.rs` drives the built binary and is the executable
 specification for the behaviour section. Extend it whenever behaviour changes.
+
+## Releasing
+
+A release is `Cargo.toml` → commit → tag `vX.Y.Z`, in that order: set
+`version`, commit, tag that commit `v<version>`. A tag that is not the
+version in `Cargo.toml` fails the release build rather than shipping a
+mismatched binary.
+
+Pushing the tag runs `.github/workflows/release.yml`; see it for the targets
+and the archive layout. `cargo publish` to crates.io is separate and manual,
+and its version should match the tag.
