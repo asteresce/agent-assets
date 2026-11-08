@@ -102,6 +102,14 @@ jobs:
     permissions:
       contents: write
     steps:
+      # Before download-artifact: a checkout cleans the workspace, and the
+      # tarballs have to survive it. `fetch-depth: 0` is what makes the
+      # previous tag and the commit list reachable.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref_name }}
+          fetch-depth: 0
+
       - uses: actions/download-artifact@v4
         with:
           merge-multiple: true
@@ -109,16 +117,36 @@ jobs:
       - name: SHA256SUMS
         run: sha256sum *.tar.gz > SHA256SUMS
 
+      # Release notes come from the commits, not from GitHub's generator —
+      # that one lists merged pull requests and this repository has never
+      # had one. Only the subjects a reader upgrading would care about:
+      # everything else is one `git log` away at the compare link.
+      - name: Notes
+        run: |
+          previous=$(git describe --tags --abbrev=0 "$TAG^" 2>/dev/null || true)
+          if [ -n "$previous" ]; then range="$previous..$TAG"; else range="$TAG"; fi
+          {
+            echo "## What's Changed"
+            echo
+            git log --pretty=format:'%s (%h)' "$range" \
+              | awk '/^(feat|fix|docs): / { print "- " $0 }'
+            echo
+            if [ -n "$previous" ]; then
+              echo "**Full Changelog**: https://github.com/$GITHUB_REPOSITORY/compare/$previous...$TAG"
+            else
+              echo "**Full Changelog**: https://github.com/$GITHUB_REPOSITORY/commits/$TAG"
+            fi
+          } > notes.md
+
       - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}
-          # This job never checks out the tree — it only holds the artifacts
-          # — so there is no git repository for `gh` to read the target
-          # from. Say it outright.
+          # Spelled out rather than read from the remote, so publishing does
+          # not depend on how the tree was fetched.
           GH_REPO: ${{ github.repository }}
         run: |
           gh release create "$TAG" \
             --verify-tag \
             --title "$TAG" \
-            --generate-notes \
+            --notes-file notes.md \
             *.tar.gz SHA256SUMS

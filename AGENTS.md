@@ -111,3 +111,7 @@ mismatched binary.
 Pushing the tag runs `.github/workflows/release.yml`; see it for the targets
 and the archive layout. `cargo publish` to crates.io is separate and manual,
 and its version should match the tag.
+
+Release notes are generated from `git log`, listing the `feat:`, `fix:` and
+`docs:` subjects between the tags. The subject is the public changelog line,
+so write one for somebody who did not read the diff.
