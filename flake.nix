@@ -48,7 +48,10 @@
         {
           sync = app "sync";
           check = app "check";
+          status = app "status";
           render = app "render";
+          list = app "list";
+          show = app "show";
         });
 
       # A shell that can build, test and publish the crate. The engine is

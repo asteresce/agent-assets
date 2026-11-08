@@ -266,13 +266,14 @@ With `enable = true` and a non-empty `config`, the flake gains `apps`:
 ```bash
 nix run .#sync
 nix run .#check
+nix run .#status
 ```
 
-Both run the package **this flake builds**, with `--project` set to
+All three run the package **this flake builds**, with `--project` set to
 `$PROJECT_ROOT`, falling back to `$PWD`. Extra arguments after `--` are
 forwarded to the engine. Because the program is this flake's own binary, and
 the registry is compiled into it, emitted bytes depend on your `flake.lock`
 and nothing else — the consumer's nixpkgs cannot drift them.
 
 The flake also exposes `packages.default` (the engine), and
-`apps.{sync,check,render}` for running it outside a module.
+`apps.{sync,check,status,render,list,show}` for running it outside a module.

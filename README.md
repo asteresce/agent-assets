@@ -10,7 +10,8 @@ puts them into a project tree: declarative, idempotent, and checkable in CI.
   into it, so it runs anywhere with nothing installed beside it.
 - `assets/` — that registry's source, one directory per category (`rules/`,
   `skills/`, `agents/`).
-- A flake-parts module wiring `nix run .#sync` and `nix run .#check`.
+- A flake-parts module wiring `nix run .#sync`, `nix run .#check` and
+  `nix run .#status`.
 
 The engine targets Unix (Linux and macOS): its path-safety rules are Unix
 symlink semantics.
@@ -103,6 +104,7 @@ For a Nix consumer the flake module wires the same engine in, pinned by your
 ```bash
 nix run .#sync     # write the assets into the project
 nix run .#check    # exit 1 if anything drifted (use it in CI)
+nix run .#status   # every path, matching or not; always exits 0
 ```
 
 ## How it behaves

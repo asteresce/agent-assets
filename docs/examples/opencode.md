@@ -12,7 +12,7 @@ load the rules.
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     flake-parts.url = "github:hercules-ci/flake-parts";
-    agent-assets.url = "github:your-org/agent-assets";
+    agent-assets.url = "github:asteresce/agent-assets";
   };
 
   outputs = inputs@{ flake-parts, agent-assets, ... }:

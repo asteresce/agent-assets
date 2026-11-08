@@ -64,7 +64,7 @@ in
   config = {
     perSystem = { pkgs, ... }: {
       apps = lib.optionalAttrs isActive (
-        lib.genAttrs [ "sync" "check" ] (name: {
+        lib.genAttrs [ "sync" "check" "status" ] (name: {
           type = "app";
           program = makeProgram pkgs name;
         })
