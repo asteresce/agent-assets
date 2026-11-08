@@ -32,12 +32,23 @@ sha256sum --check --ignore-missing SHA256SUMS
 tar xzf "agent-assets-$version-$target.tar.gz"
 ```
 
-Or install it from source, which is one command and needs nothing else —
-the registry is in the binary:
+Or let a package manager put it on your `PATH` — the registry is in the
+binary, so any of these needs nothing else beside it:
 
 ```bash
-cargo install agent-assets
+cargo install agent-assets                 # build it from source
+cargo binstall agent-assets                # prebuilt, for systems without Nix
+mise use -y github:asteresce/agent-assets
 ```
+
+`mise` hides releases younger than a day by default; pin the version
+(`github:asteresce/agent-assets@0.1.1`) or lower `minimum_release_age` when you
+want one the moment it ships.
+
+If your system is configured declaratively — NixOS, home-manager — install it
+there instead and pin it through your own `flake.lock`, rather than letting a
+package manager write outside the store. See
+[Quick start (Nix)](#quick-start-nix).
 
 Then write a config that says which assets you import and where they go:
 
@@ -64,6 +75,15 @@ without changing the binary. Everything else defaults from
 [`spec.json`](spec.json); see [the reference](docs/api.md).
 
 ## Quick start (Nix)
+
+To install the binary declaratively, take the package and let your own
+`flake.lock` pin it:
+
+```nix
+inputs.agent-assets.url = "github:asteresce/agent-assets";
+
+environment.systemPackages = [ inputs.agent-assets.packages.${pkgs.system}.default ];
+```
 
 For a Nix consumer the flake module wires the same engine in, pinned by your
 `flake.lock`:
