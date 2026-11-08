@@ -22,12 +22,10 @@ let
         then "${cfg.config}"
         else "${pkgs.writeText (builtins.baseNameOf spec.defaults.config) (builtins.toJSON cfg.config)}";
       package = self.packages.${pkgs.system}.default;
-      assets = "${package}/${spec.defaults.assets}";
     in
     "${pkgs.writeShellScript "${spec.name}-${name}" ''
       exec ${package}/bin/${spec.name} ${name} \
         --config ${lib.escapeShellArg configJson} \
-        --assets ${lib.escapeShellArg assets} \
         --manifest ${lib.escapeShellArg cfg.manifest} \
         --project "''${PROJECT_ROOT:-$PWD}" \
         "$@"

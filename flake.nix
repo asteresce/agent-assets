@@ -18,18 +18,14 @@
       packages = forAllSystems (system:
         let pkgs = nixpkgs.legacyPackages.${system}; in
         {
-          # The engine, with `spec.json` compiled in. The registry ships
-          # beside it so a release archive is self-contained; `--assets`
-          # substitutes another registry.
+          # The engine, with `spec.json` and the registry compiled in. It is
+          # one self-contained binary; `--assets` substitutes another registry.
           default = pkgs.rustPlatform.buildRustPackage {
             pname = spec.name;
             version = manifest.package.version;
             src = ./.;
             cargoLock.lockFile = ./Cargo.lock;
             doCheck = true;
-            postInstall = ''
-              cp -r ${./assets} $out/${spec.defaults.assets}
-            '';
             meta = {
               description = spec.name;
             };
