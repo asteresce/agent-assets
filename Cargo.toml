@@ -16,6 +16,10 @@ path = "src/lib.rs"
 [[bin]]
 name = "agent-assets"
 path = "src/main.rs"
+# The binary is a thin shell over the library and carries no unit tests, so
+# `cargo test` need not build a test harness for it. The behaviour suite in
+# tests/ drives it as a process instead.
+test = false
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }
