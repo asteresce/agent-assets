@@ -48,8 +48,9 @@ and the tests are its executable form.
    an example may contain headings of its own. Artifacts in a skill directory
    are free-form.
 
-The category catalogs are plain directory listings — see
-`assets/*/README.md` — so there is no generated table to refresh.
+The category `README.md`s describe what a category is for and how its assets
+are referenced. The listing itself is `agent-assets list`'s job, so there is
+no catalog to keep in step.
 
 Changing the section vocabulary is a `spec.json` change: keep a heading's name
 and meaning the same across categories, never rename one in place (existing

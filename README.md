@@ -260,10 +260,10 @@ This registry is compiled into the binary, so `list` and `show` work with
 nothing on disk. `--assets` reads the same layout from a directory instead,
 which is how a consumer brings their own.
 
-Adding an asset is a Markdown file plus a line in the category `README.md`.
-Adding a category is a new directory in the registry plus the matching config
-key and section schema: the engine infers file-vs-directory from whether the
-source is `<name>.md` or `<name>/`, so nothing else has to change.
+Adding an asset is a file or a directory in the registry; `agent-assets list`
+sees it and nothing else has to change. Adding a category is a new directory
+in the registry plus the matching config key and section schema: the engine
+infers file-vs-directory from whether the source is `<name>.md` or `<name>/`.
 
 ## Pinning and updates
 
@@ -306,8 +306,8 @@ commit → tag `vX.Y.Z`**.
   example wiring assets into OpenCode.
 - [`assets/rules/README.md`](assets/rules/README.md),
   [`assets/skills/README.md`](assets/skills/README.md),
-  [`assets/agents/README.md`](assets/agents/README.md) — what is in the
-  registry.
+  [`assets/agents/README.md`](assets/agents/README.md) — what each category
+  is for. What is in them is `agent-assets list`.
 - [`AGENTS.md`](AGENTS.md) — contributing to this repository.
 
 ## Project layout
