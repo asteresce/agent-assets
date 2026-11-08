@@ -63,52 +63,41 @@ fn emit_entries<'a>(
     }
 }
 
-fn emit_entry(key: &str, value: &Value, indent: usize, out: &mut String) {
+/// One value at `indent`, introduced by `lead`: a mapping key with its
+/// colon, or an array dash. A non-empty collection opens a block beneath
+/// the lead; anything else lands on the lead's own line.
+fn emit(lead: &str, value: &Value, indent: usize, out: &mut String) {
     let pad = " ".repeat(indent);
     match value {
         Value::Object(map) if !map.is_empty() => {
             out.push_str(&pad);
-            out.push_str(&string_scalar(key));
-            out.push_str(":\n");
+            out.push_str(lead);
+            out.push('\n');
             emit_entries(sorted(map).into_iter(), indent + INDENT, out);
         }
         Value::Array(items) if !items.is_empty() => {
             out.push_str(&pad);
-            out.push_str(&string_scalar(key));
-            out.push_str(":\n");
+            out.push_str(lead);
+            out.push('\n');
             emit_array(items, indent + INDENT, out);
         }
         other => {
             out.push_str(&pad);
-            out.push_str(&string_scalar(key));
-            out.push_str(": ");
+            out.push_str(lead);
+            out.push(' ');
             out.push_str(&scalar(other));
             out.push('\n');
         }
     }
 }
 
+fn emit_entry(key: &str, value: &Value, indent: usize, out: &mut String) {
+    emit(&format!("{}:", string_scalar(key)), value, indent, out);
+}
+
 fn emit_array(items: &[Value], indent: usize, out: &mut String) {
-    let pad = " ".repeat(indent);
     for item in items {
-        match item {
-            Value::Object(map) if !map.is_empty() => {
-                out.push_str(&pad);
-                out.push_str("-\n");
-                emit_entries(sorted(map).into_iter(), indent + INDENT, out);
-            }
-            Value::Array(inner) if !inner.is_empty() => {
-                out.push_str(&pad);
-                out.push_str("-\n");
-                emit_array(inner, indent + INDENT, out);
-            }
-            other => {
-                out.push_str(&pad);
-                out.push_str("- ");
-                out.push_str(&scalar(other));
-                out.push('\n');
-            }
-        }
+        emit("-", item, indent, out);
     }
 }
 
@@ -118,8 +107,7 @@ fn emit_array(items: &[Value], indent: usize, out: &mut String) {
 fn scalar(value: &Value) -> String {
     match value {
         Value::Null => "null".to_string(),
-        Value::Bool(true) => "true".to_string(),
-        Value::Bool(false) => "false".to_string(),
+        Value::Bool(flag) => flag.to_string(),
         Value::Number(number) => number.to_string(),
         Value::String(text) => string_scalar(text),
         Value::Array(_) => "[]".to_string(),
