@@ -180,10 +180,31 @@ impl Entry {
 /// The first non-blank line inside the first `##` section. Assets carry no
 /// preamble and their first section is required, so this is always defined
 /// for a conforming asset.
+///
+/// Fenced code is opaque, the way `tests/registry.rs` reads headings: an
+/// example may contain `##` lines of its own, and a fence marker is not
+/// prose.
 fn summary_of(bytes: &[u8]) -> String {
     let text = String::from_utf8_lossy(bytes);
     let mut in_section = false;
+    let mut fence = 0usize;
     for line in text.lines() {
+        let trimmed = line.trim_start();
+        let run = trimmed
+            .chars()
+            .take_while(|c| *c == '`' || *c == '~')
+            .count();
+        if fence > 0 {
+            // Only a run at least as long, with nothing behind it, closes.
+            if run >= fence && trimmed[run..].trim().is_empty() {
+                fence = 0;
+            }
+            continue;
+        }
+        if run >= 3 {
+            fence = run;
+            continue;
+        }
         if line.starts_with("## ") {
             in_section = true;
             continue;
@@ -580,5 +601,22 @@ mod tests {
             "Test first."
         );
         assert_eq!(summary_of(b"# A title\n"), "");
+    }
+
+    #[test]
+    fn a_summary_treats_code_fences_as_opaque() {
+        assert_eq!(
+            summary_of(b"## Summary\n\n```bash\ngit commit\n```\n\nAfter the fence.\n"),
+            "After the fence."
+        );
+        assert_eq!(
+            summary_of(b"## Summary\n\n````\n## Fake\n````\n\nReal text.\n"),
+            "Real text."
+        );
+        // A longer fence is not closed by a shorter one.
+        assert_eq!(
+            summary_of(b"## Summary\n\n````\n```\nStill code.\n````\n\nProse.\n"),
+            "Prose."
+        );
     }
 }
