@@ -31,3 +31,11 @@ sha2 = "0.10"
 [dev-dependencies]
 assert_cmd = "2"
 tempfile = "3"
+
+[package.metadata.binstall]
+# The release archives are `agent-assets-{version}-{target}.tar.gz` with the
+# binary at the root. Neither is what binstall would guess: `archive-suffix`
+# for a tgz is `.tgz`, not `.tar.gz`, and the defaults look for the binary
+# inside a versioned directory. Both ends are spelled out rather than probed.
+pkg-url = "{ repo }/releases/download/v{ version }/{ name }-{ version }-{ target }.tar.gz"
+bin-dir = "{ bin }{ binary-ext }"
