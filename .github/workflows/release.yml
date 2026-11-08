@@ -1,0 +1,107 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+env:
+  CARGO_TERM_COLOR: always
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: ${{ matrix.target }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Every target is built natively, so nothing is cross-compiled and
+          # nothing is tested under emulation. Linux ships a static musl
+          # build — it runs anywhere, including musl-only systems and older
+          # distros. The Nix build keeps glibc, which is right for that
+          # channel.
+          - runner: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+            musl: true
+          - runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-musl
+            musl: true
+          - runner: macos-15-intel
+            target: x86_64-apple-darwin
+            musl: false
+          - runner: macos-latest
+            target: aarch64-apple-darwin
+            musl: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: The tag is the version in Cargo.toml
+        run: |
+          version=$(cargo metadata --no-deps --format-version 1 \
+            | jq -r '.packages[] | select(.name == "agent-assets") | .version')
+          echo "version=$version" >> "$GITHUB_ENV"
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::tag $GITHUB_REF_NAME is not v$version"
+            exit 1
+          fi
+
+      - name: musl libc
+        if: matrix.musl
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes musl-tools
+
+      - name: The behaviour suite passes before anything ships
+        run: cargo test
+
+      - name: Build
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Package
+        run: |
+          archive="agent-assets-$version-${{ matrix.target }}"
+          stage="$(mktemp -d)/$archive"
+          mkdir -p "$stage"
+          cp "target/${{ matrix.target }}/release/agent-assets" "$stage/"
+          cp -r docs spec.json README.md LICENSE "$stage/"
+          # The contents sit at the archive root, so `curl | tar xz` leaves
+          # the binary where the shell is standing.
+          tar czf "$archive.tar.gz" -C "$stage" \
+            agent-assets docs spec.json README.md LICENSE
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: agent-assets-${{ matrix.target }}
+          path: agent-assets-*.tar.gz
+          if-no-files-found: error
+
+  release:
+    name: publish
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+
+      - name: SHA256SUMS
+        run: sha256sum *.tar.gz > SHA256SUMS
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --verify-tag \
+            --title "$GITHUB_REF_NAME" \
+            --generate-notes \
+            *.tar.gz SHA256SUMS
