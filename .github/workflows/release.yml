@@ -112,6 +112,10 @@ jobs:
       - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}
+          # This job never checks out the tree — it only holds the artifacts
+          # — so there is no git repository for `gh` to read the target
+          # from. Say it outright.
+          GH_REPO: ${{ github.repository }}
         run: |
           gh release create "$TAG" \
             --verify-tag \
