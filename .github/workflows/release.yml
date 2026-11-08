@@ -96,7 +96,7 @@ jobs:
           if-no-files-found: error
 
   release:
-    name: publish
+    name: github release
     needs: build
     runs-on: ubuntu-latest
     permissions:
@@ -150,3 +150,37 @@ jobs:
             --title "$TAG" \
             --notes-file notes.md \
             *.tar.gz SHA256SUMS
+
+  # The crate has to exist wherever the archives do, or `cargo install` and
+  # the release page drift apart and nobody notices. This is the one
+  # irreversible step in the process, so it runs last: the version has
+  # already matched the tag, four platforms have built and tested, and the
+  # GitHub release is already up.
+  crates:
+    name: publish to crates.io
+    needs: release
+    # A tag push only. `workflow_dispatch` is the recovery path for the
+    # GitHub release and must not re-upload a version that is already
+    # published.
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: The token is configured
+        run: |
+          if [ -z "$CARGO_REGISTRY_TOKEN" ]; then
+            echo "::error::CARGO_REGISTRY_TOKEN is not set; add it under Settings > Secrets and variables > Actions"
+            exit 1
+          fi
+
+      - name: Publish
+        run: cargo publish

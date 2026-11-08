@@ -109,8 +109,10 @@ version in `Cargo.toml` fails the release build rather than shipping a
 mismatched binary.
 
 Pushing the tag runs `.github/workflows/release.yml`; see it for the targets
-and the archive layout. `cargo publish` to crates.io is separate and manual,
-and its version should match the tag.
+and the archive layout. It also publishes to crates.io, last, once the
+version has matched the tag and four platforms have built. That step needs
+`CARGO_REGISTRY_TOKEN` under Settings → Secrets and variables → Actions, and
+it is the one irreversible step in the process.
 
 Release notes are generated from `git log`, listing the `feat:`, `fix:` and
 `docs:` subjects between the tags. The subject is the public changelog line,
