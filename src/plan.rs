@@ -108,6 +108,18 @@ impl Problem {
     }
 }
 
+/// One emitted file and the state `status` reports for it.
+///
+/// Unlike [`Problem`] this is never suppressed: a file under a blocked asset
+/// root still has a state of its own, so `status` never calls a file clean
+/// when the run is going to rewrite it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FileState {
+    pub path: PathBuf,
+    pub origin: Origin,
+    pub status: Status,
+}
+
 /// Everything `check`, `sync` and `render` need to know about a run.
 #[derive(Debug, Clone)]
 pub struct Plan {
@@ -119,6 +131,13 @@ pub struct Plan {
     pub actions: Vec<Action>,
     /// What `check` reports, in the order it prints them.
     pub problems: Vec<Problem>,
+    /// Every emitted file with its state, in `tree` order. `status` reads
+    /// this instead of `problems`.
+    pub states: Vec<FileState>,
+    /// Files under a category root that neither this run nor the previous
+    /// one owns. They are never touched; `status` counts them so a reader
+    /// can tell ours from theirs at a glance.
+    pub custom: Vec<PathBuf>,
 }
 
 // ------------------------------------------------------------ classification
@@ -213,8 +232,15 @@ pub fn plan(
 
     let mut writes: Vec<Action> = Vec::new();
     let mut file_problems: Vec<Problem> = Vec::new();
+    let mut states: Vec<FileState> = Vec::new();
     for outcome in &outcomes {
-        classify(outcome, manifest, &mut writes, &mut file_problems)?;
+        classify(
+            outcome,
+            manifest,
+            &mut writes,
+            &mut file_problems,
+            &mut states,
+        )?;
     }
 
     // Directory assets are immutable after injection: anything we did not
@@ -251,7 +277,6 @@ pub fn plan(
             }
         }
     }
-
     // JSON injections merge into files the project owns; they are never in
     // the manifest and never deleted.
     let (merges, inject_problems) = plan_injections(config, &resolved, project_root)?;
@@ -271,11 +296,19 @@ pub fn plan(
     actions.extend(writes);
     actions.extend(removes);
 
+    // Nobody owns these, so nobody touches them; `status` only counts them.
+    let custom = custom_files(project_root, config, spec, &resolved, manifest)?;
+
+    // In `tree` order, so `states` and `tree` walk together.
+    states.sort_by(|a, b| a.path.cmp(&b.path));
+
     Ok(Plan {
         tree: tree_of(&resolved),
         manifest: manifest_of(&resolved),
         actions,
         problems,
+        states,
+        custom,
     })
 }
 
@@ -390,6 +423,7 @@ fn classify(
     manifest: Option<&Manifest>,
     writes: &mut Vec<Action>,
     problems: &mut Vec<Problem>,
+    states: &mut Vec<FileState>,
 ) -> Result<(), String> {
     let Outcome {
         path,
@@ -421,7 +455,12 @@ fn classify(
     // A file under a blocked asset root still gets written — the obstacle
     // above it is cleared first — but the asset's own `DRIFT` already says
     // what is wrong, so it is not repeated per file.
-    let report = |problem: Problem, problems: &mut Vec<Problem>| {
+    let mut report = |problem: Problem, status: Status, problems: &mut Vec<Problem>| {
+        states.push(FileState {
+            path: path.clone(),
+            origin: origin.clone(),
+            status,
+        });
         if !blocked {
             problems.push(problem);
         }
@@ -430,18 +469,24 @@ fn classify(
     match disk {
         Disk::Absent => {
             writes.push(write(WriteKind::Fresh));
-            report(missing(), problems);
+            report(missing(), Status::Missing, problems);
         }
-        Disk::File(on_disk) if on_disk == bytes => {}
+        Disk::File(on_disk) if on_disk == bytes => {
+            states.push(FileState {
+                path: path.clone(),
+                origin: origin.clone(),
+                status: Status::Clean,
+            });
+        }
         Disk::File(on_disk) => {
             let written = hash_bytes(on_disk);
             let ours = manifest.and_then(|m| m.hash_of(path)) == Some(written.as_str());
             if ours {
                 writes.push(write(WriteKind::Update));
-                report(drift(), problems);
+                report(drift(), Status::Drift, problems);
             } else {
                 writes.push(write(WriteKind::Conflict));
-                report(conflict(), problems);
+                report(conflict(), Status::Conflict, problems);
             }
         }
         Disk::Obstacle => {
@@ -449,7 +494,7 @@ fn classify(
             // drift whatever we own; `sync` decides separately whether it is
             // ours to replace.
             writes.push(write(WriteKind::Fresh));
-            report(drift(), problems);
+            report(drift(), Status::Drift, problems);
         }
     }
     Ok(())
@@ -600,6 +645,81 @@ fn collect_strays(
         }
     }
     Ok(())
+}
+
+/// Files under a category root that no import produced and no manifest row
+/// owns: the project's own additions to a shared namespace. The engine never
+/// touches them, so `status` only counts them.
+fn custom_files(
+    project_root: &Path,
+    config: &Config,
+    spec: &Spec,
+    resolved: &[Resolved],
+    previous: Option<&Manifest>,
+) -> Result<Vec<PathBuf>, String> {
+    let mut owned: BTreeSet<PathBuf> = resolved
+        .iter()
+        .map(|asset| asset.asset_path.clone())
+        .collect();
+    if let Some(previous) = previous {
+        for row in &previous.0 {
+            owned.insert(row.path.clone());
+        }
+    }
+
+    let mut roots: Vec<PathBuf> = Vec::new();
+    for (category, entry) in &config.0 {
+        roots.push(
+            entry
+                .effective_root(category, spec)?
+                .as_path()
+                .to_path_buf(),
+        );
+    }
+    roots.sort();
+    roots.dedup();
+
+    let mut found = Vec::new();
+    for root in roots {
+        let absolute = project_root.join(&root);
+        if !is_real_dir(&absolute) {
+            continue;
+        }
+        collect_custom(&absolute, &root, &mut found)?;
+    }
+    found.retain(|path| {
+        !owned
+            .iter()
+            .any(|asset| path == asset || path.starts_with(asset))
+    });
+    found.sort();
+    found.dedup();
+    Ok(found)
+}
+
+/// Every real file under `absolute`, as `relative`-rooted paths. Symlinks are
+/// skipped rather than followed: a link out of the project is not a file of
+/// the project's.
+fn collect_custom(absolute: &Path, relative: &Path, out: &mut Vec<PathBuf>) -> Result<(), String> {
+    let entries = std::fs::read_dir(absolute)
+        .map_err(|e| format!("cannot read {}: {e}", absolute.display()))?;
+    for entry in entries {
+        let entry = entry.map_err(|e| format!("cannot read {}: {e}", absolute.display()))?;
+        let child_relative = relative.join(entry.file_name());
+        let metadata = std::fs::symlink_metadata(entry.path())
+            .map_err(|e| format!("cannot inspect {}: {e}", entry.path().display()))?;
+        let file_type = metadata.file_type();
+        if file_type.is_file() {
+            out.push(child_relative);
+        } else if file_type.is_dir() {
+            collect_custom(&entry.path(), &child_relative, out)?;
+        }
+    }
+    Ok(())
+}
+
+fn is_real_dir(absolute: &Path) -> bool {
+    std::fs::symlink_metadata(absolute).is_ok_and(|m| m.file_type().is_dir())
 }
 
 // --------------------------------------------------------------- projections

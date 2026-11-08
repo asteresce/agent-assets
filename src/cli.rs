@@ -17,9 +17,11 @@ use crate::spec::Spec;
     version,
     about = "Render, sync and check shared agent assets",
     long_about = "Render, sync and check shared agent assets.\n\n\
-        sync renders the configured assets from --assets and reconciles them \
-        with the project. check performs the same comparison and only reports. \
-        render writes the expected asset tree to --out and touches nothing else."
+        sync renders the configured assets and reconciles them with the \
+        project. check performs the same comparison and only reports. render \
+        writes the expected asset tree to --out and touches nothing else.\n\n\
+        status is check without the filter: every path, matching or not. list \
+        and show read the registry and need no project."
 )]
 pub struct Cli {
     #[command(flatten)]
@@ -70,6 +72,22 @@ pub enum Command {
 
     /// Report problems; exit 1 if there are any
     Check,
+
+    /// Report every path, matching or not; always exits 0
+    Status,
+
+    /// List the assets the registry holds
+    List,
+
+    /// Print one asset from the registry
+    Show {
+        /// The asset to print: `<category>/<name>`
+        target: String,
+
+        /// Print the rendered form — what sync would write — not the source
+        #[arg(long)]
+        rendered: bool,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
@@ -135,6 +153,17 @@ pub fn config_basename(spec: &Spec) -> Result<PathBuf, String> {
         .ok_or_else(|| format!("defaults.config has no file name: {}", spec.defaults.config))
 }
 
+/// Split a `show` target into its category and its name.
+pub fn split_target(target: &str) -> Result<(&str, &str), String> {
+    let (category, name) = target
+        .split_once('/')
+        .ok_or_else(|| format!("expected <category>/<name>, got {target:?}"))?;
+    if category.is_empty() || name.is_empty() || name.contains('/') {
+        return Err(format!("expected <category>/<name>, got {target:?}"));
+    }
+    Ok((category, name))
+}
+
 fn current_dir() -> Result<PathBuf, String> {
     env::current_dir().map_err(|e| format!("cannot determine the current directory: {e}"))
 }
@@ -153,10 +182,38 @@ mod tests {
     fn subcommands_parse() {
         assert!(matches!(parse(&["check"]).command, Command::Check));
         assert!(matches!(parse(&["sync"]).command, Command::Sync));
+        assert!(matches!(parse(&["status"]).command, Command::Status));
+        assert!(matches!(parse(&["list"]).command, Command::List));
         assert!(matches!(
             parse(&["render", "--out", "x"]).command,
             Command::Render { .. }
         ));
+    }
+
+    #[test]
+    fn show_takes_a_target_and_an_optional_rendered_flag() {
+        assert!(matches!(
+            parse(&["show", "rules/security"]).command,
+            Command::Show {
+                rendered: false,
+                ..
+            }
+        ));
+        assert!(matches!(
+            parse(&["show", "--rendered", "skills/tdd"]).command,
+            Command::Show { rendered: true, .. }
+        ));
+    }
+
+    #[test]
+    fn a_show_target_is_a_category_and_a_name() {
+        assert_eq!(
+            split_target("rules/security").unwrap(),
+            ("rules", "security")
+        );
+        for bad in ["rules", "rules/a/b", "/security", "rules/", ""] {
+            assert!(split_target(bad).is_err(), "{bad:?} should not parse");
+        }
     }
 
     #[test]

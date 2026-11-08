@@ -29,8 +29,9 @@ impl std::fmt::Display for Origin {
 
 /// Every word the engine can print.
 ///
-/// `sync` prints the first four for each change it makes; `check` prints the
-/// rest for each problem it finds.
+/// `sync` prints `WRITE`, `UPDATE`, `REMOVE`, `MERGE` and `CONFLICT` for each
+/// change it makes or refuses; `check` prints the rest for each problem it
+/// finds; `status` prints `CLEAN` for the files that need nothing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Status {
     Write,
@@ -43,6 +44,7 @@ pub enum Status {
     Orphan,
     Inject,
     Conflict,
+    Clean,
 }
 
 impl Status {
@@ -58,14 +60,29 @@ impl Status {
             Status::Orphan => "ORPHAN",
             Status::Inject => "INJECT",
             Status::Conflict => "CONFLICT",
+            Status::Clean => "CLEAN",
+        }
+    }
+
+    /// How much a state says is wrong with a path, for collapsing the states
+    /// of one import into a single word. Higher is worse.
+    pub fn severity(self) -> u8 {
+        match self {
+            Status::Clean => 0,
+            Status::Extra | Status::Inject | Status::Orphan => 1,
+            Status::Drift | Status::Update => 2,
+            Status::Missing | Status::Remove => 3,
+            Status::Conflict => 4,
+            Status::Write | Status::Merge => 0,
         }
     }
 
     /// Red is for missing, deleted and refused; yellow for changed and
-    /// worth a look; green for created; cyan for merged.
+    /// worth a look; green for created and for nothing to do; cyan for
+    /// merged.
     fn color(self) -> &'static str {
         match self {
-            Status::Write => GREEN,
+            Status::Write | Status::Clean => GREEN,
             Status::Merge => CYAN,
             Status::Update | Status::Drift | Status::Extra | Status::Inject => YELLOW,
             Status::Remove | Status::Missing | Status::Orphan | Status::Conflict => RED,
@@ -190,10 +207,19 @@ mod tests {
             Status::Orphan,
             Status::Inject,
             Status::Conflict,
+            Status::Clean,
         ]
         .map(Status::word);
         let unique: std::collections::BTreeSet<_> = words.iter().collect();
         assert_eq!(unique.len(), words.len());
+    }
+
+    #[test]
+    fn severity_ranks_a_conflict_above_a_drift_above_nothing() {
+        assert!(Status::Conflict.severity() > Status::Missing.severity());
+        assert!(Status::Missing.severity() > Status::Drift.severity());
+        assert!(Status::Drift.severity() > Status::Extra.severity());
+        assert!(Status::Extra.severity() > Status::Clean.severity());
     }
 
     #[test]

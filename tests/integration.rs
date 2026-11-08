@@ -1096,6 +1096,165 @@ fn unknown_flags_are_rejected() {
     world.run(&["check", "--nope"]).fails();
 }
 
+// ============================================================= inspection
+
+/// `list` reads the registry and nothing else, so its output is a function
+/// of the registry alone.
+#[test]
+fn list_shows_every_asset_and_the_totals() {
+    let world = World::fixture();
+    let total = BUILD.len() + CODE_STYLE.len() + SECURITY.len() + SKILL_MD.len() + CHECKLIST.len();
+    world.run(&["list"]).ok().stdout_is(&format!(
+        "\
+agents/build      file  {:>6}  Builder.
+rules/code-style  file  {:>6}  Prefer clarity.
+rules/security    file  {:>6}  Keep secrets safe.
+skills/tdd        dir   {:>6}  Test first.
+4 assets · {total} bytes · agents: 1, rules: 2, skills: 1
+",
+        BUILD.len(),
+        CODE_STYLE.len(),
+        SECURITY.len(),
+        SKILL_MD.len() + CHECKLIST.len(),
+    ));
+}
+
+/// After `cargo install` there is no `assets/` anywhere, and `list` still
+/// works: the registry is in the binary.
+#[test]
+fn list_uses_the_embedded_registry_without_any_setup() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let mut command = std::process::Command::cargo_bin("agent-assets").unwrap();
+    command.current_dir(tmp.path()).arg("list");
+    let output = command.output().unwrap();
+    assert!(output.status.success(), "{:?}", output);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("skills/tdd"), "{stdout}");
+    assert!(stdout.contains("rules/conventional-commits"), "{stdout}");
+}
+
+#[test]
+fn show_prints_a_file_asset_verbatim() {
+    let world = World::fixture();
+    world
+        .run(&["show", "rules/security"])
+        .ok()
+        .stdout_is(SECURITY);
+}
+
+#[test]
+fn show_prints_a_directory_asset_behind_headers() {
+    let world = World::fixture();
+    world.run(&["show", "skills/tdd"]).ok().stdout_is(&format!(
+        "==> SKILL.md <==\n{SKILL_MD}\n==> checklist.md <==\n{CHECKLIST}\n"
+    ));
+}
+
+/// The rendered form is what `sync` would write: the category's frontmatter,
+/// then the first import naming the asset.
+#[test]
+fn show_rendered_applies_the_injected_frontmatter() {
+    let world = World::fixture();
+    world
+        .run(&["show", "--rendered", "rules/security"])
+        .ok()
+        .stdout_is(&format!("{RULES_FM}{SECURITY}"));
+    world
+        .run(&["show", "--rendered", "rules/code-style"])
+        .ok()
+        .stdout_is(&format!("{STYLE_FM}{CODE_STYLE}"));
+}
+
+/// The source is in the binary; the rendered form depends on the project's
+/// injections, so only that one needs a config.
+#[test]
+fn show_needs_a_config_only_for_the_rendered_form() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let mut bare = std::process::Command::cargo_bin("agent-assets").unwrap();
+    bare.current_dir(tmp.path())
+        .args(["show", "rules/conventional-commits"]);
+    assert!(bare.output().unwrap().status.success());
+
+    let mut rendered = std::process::Command::cargo_bin("agent-assets").unwrap();
+    rendered
+        .current_dir(tmp.path())
+        .args(["show", "--rendered", "rules/conventional-commits"]);
+    let output = rendered.output().unwrap();
+    assert!(!output.status.success());
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("config not found"),
+        "{:?}",
+        output.stderr
+    );
+}
+
+#[test]
+fn show_rejects_a_target_that_is_not_a_category_and_a_name() {
+    let world = World::fixture();
+    world
+        .run(&["show", "rules"])
+        .fails()
+        .stderr_contains("expected <category>/<name>");
+}
+
+/// `status` is `check` without the filter, and always exits 0 — the state of
+/// the tree is information, not an error.
+#[test]
+fn status_reports_every_path_and_always_exits_zero() {
+    let world = World::fixture();
+    world.sync().ok();
+    world.write_project(".opencode/rules/security.md", "local hack\n");
+
+    world.run(&["status"]).ok().stdout_is(
+        "\
+CLEAN .opencode/agents/build.md (from agents/build)
+CLEAN .opencode/rules/base/style.md (from rules/code-style)
+CONFLICT .opencode/rules/security.md (from rules/security)
+CLEAN .opencode/skills/tdd/SKILL.md (from skills/tdd)
+CLEAN .opencode/skills/tdd/checklist.md (from skills/tdd)
+4 imports · 3 clean · 1 conflict · 0 custom files
+",
+    );
+}
+
+/// A directory asset is one import however many files it carries, so five
+/// `MISSING` lines tally as four. The pending injection is a path-level fact
+/// rather than a state of any import, so it is counted apart.
+#[test]
+fn status_tallies_imports_not_files() {
+    let world = World::fixture();
+    world.run(&["status"]).ok().stdout_is(
+        "\
+MISSING .opencode/agents/build.md (from agents/build)
+MISSING .opencode/rules/base/style.md (from rules/code-style)
+MISSING .opencode/rules/security.md (from rules/security)
+MISSING .opencode/skills/tdd/SKILL.md (from skills/tdd)
+MISSING .opencode/skills/tdd/checklist.md (from skills/tdd)
+INJECT opencode.json
+4 imports · 0 clean · 4 missing · 1 injection · 0 custom files
+",
+    );
+}
+
+/// Files nobody owns are never touched — and `status` says how many there
+/// are, so a reader can tell ours from theirs at a glance.
+#[test]
+fn status_counts_custom_files_alongside_ours() {
+    let world = World::fixture();
+    world.sync().ok();
+    world.write_project(".opencode/rules/custom.md", "mine\n");
+    world.write_project(&skill("my-own"), "mine\n");
+
+    let run = world.run(&["status"]);
+    run.ok();
+    assert!(
+        run.stdout
+            .ends_with("4 imports · 4 clean · 2 custom files\n"),
+        "{:?}",
+        run.stdout
+    );
+}
+
 // ---------------------------------------------------------------- helpers
 
 /// The SHA-256 of `bytes`, spelled the way the manifest spells it.
