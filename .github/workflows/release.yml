@@ -3,9 +3,20 @@ name: release
 on:
   push:
     tags: ["v*"]
+  # A tag push fires once. When a release build fails, this re-runs it
+  # against the same tag using whatever `release.yml` is on the branch you
+  # dispatch from — so a fix does not need the tag to move.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to release; must be the version in Cargo.toml"
+        required: true
+        type: string
 
 env:
   CARGO_TERM_COLOR: always
+  # The tag being released: the pushed ref, or the one asked for by hand.
+  TAG: ${{ inputs.tag || github.ref_name }}
 
 permissions:
   contents: read
@@ -37,6 +48,8 @@ jobs:
             musl: false
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref_name }}
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -47,8 +60,8 @@ jobs:
           version=$(cargo metadata --no-deps --format-version 1 \
             | jq -r '.packages[] | select(.name == "agent-assets") | .version')
           echo "version=$version" >> "$GITHUB_ENV"
-          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
-            echo "::error::tag $GITHUB_REF_NAME is not v$version"
+          if [ "v$version" != "$TAG" ]; then
+            echo "::error::tag $TAG is not v$version"
             exit 1
           fi
 
@@ -100,8 +113,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" \
+          gh release create "$TAG" \
             --verify-tag \
-            --title "$GITHUB_REF_NAME" \
+            --title "$TAG" \
             --generate-notes \
             *.tar.gz SHA256SUMS
