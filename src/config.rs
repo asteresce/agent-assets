@@ -246,6 +246,21 @@ impl Import {
     }
 }
 
+/// The map form of an import, as serde sees it. Kept separate for the same
+/// reason `CategoryRepr` is: a derived `deny_unknown_fields` beats a
+/// hand-rolled key loop, and the messages stay serde's.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ImportRepr {
+    name: Name,
+    #[serde(default)]
+    rename: Option<Name>,
+    #[serde(default)]
+    destination: Option<RelPath>,
+    #[serde(default)]
+    injections: Injections,
+}
+
 impl<'de> Deserialize<'de> for Import {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -273,56 +288,17 @@ impl<'de> Deserialize<'de> for Import {
                 })
             }
 
-            fn visit_map<A>(self, mut map: A) -> Result<Import, A::Error>
+            fn visit_map<A>(self, map: A) -> Result<Import, A::Error>
             where
                 A: MapAccess<'de>,
             {
-                let mut name: Option<Name> = None;
-                let mut rename: Option<Name> = None;
-                let mut destination: Option<RelPath> = None;
-                let mut injections: Option<Injections> = None;
-
-                while let Some(key) = map.next_key::<String>()? {
-                    match key.as_str() {
-                        "name" => {
-                            if name.is_some() {
-                                return Err(DeError::duplicate_field("name"));
-                            }
-                            name = Some(map.next_value()?);
-                        }
-                        "rename" => {
-                            if rename.is_some() {
-                                return Err(DeError::duplicate_field("rename"));
-                            }
-                            rename = Some(map.next_value()?);
-                        }
-                        "destination" => {
-                            if destination.is_some() {
-                                return Err(DeError::duplicate_field("destination"));
-                            }
-                            destination = Some(map.next_value()?);
-                        }
-                        "injections" => {
-                            if injections.is_some() {
-                                return Err(DeError::duplicate_field("injections"));
-                            }
-                            injections = Some(map.next_value()?);
-                        }
-                        other => {
-                            return Err(DeError::unknown_field(
-                                other,
-                                &["name", "rename", "destination", "injections"],
-                            ));
-                        }
-                    }
-                }
-
-                let name = name.ok_or_else(|| DeError::missing_field("name"))?;
+                let repr =
+                    ImportRepr::deserialize(serde::de::value::MapAccessDeserializer::new(map))?;
                 Ok(Import {
-                    name,
-                    rename,
-                    destination,
-                    injections: injections.unwrap_or_default(),
+                    name: repr.name,
+                    rename: repr.rename,
+                    destination: repr.destination,
+                    injections: repr.injections,
                 })
             }
         }
