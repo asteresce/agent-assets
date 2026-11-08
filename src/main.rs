@@ -4,7 +4,7 @@
 //! the project and config, plan, then either report (`check`) or apply
 //! (`sync`). `render` writes the expected tree somewhere else entirely.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::ExitCode;
 
 use agent_assets::cli::{self, Cli, Command};
@@ -37,7 +37,10 @@ fn run() -> Result<u8, String> {
     let config_path = cli::resolve_config_path(&args, &spec, &project)?;
     let config = Config::read(&config_path)?;
 
-    let registry = Registry::with_defaults(default_assets_root(&args, &spec)?, &spec);
+    let registry = match &args.common.assets {
+        Some(root) => Registry::with_defaults(root.clone(), &spec),
+        None => Registry::embedded_with_defaults(&spec),
+    };
     let manifest_path = project.join(resolve_manifest(&args, &spec)?.as_path());
     let reporter = Reporter::new(args.common.color);
 
@@ -111,37 +114,4 @@ fn resolve_manifest(args: &Cli, spec: &Spec) -> Result<RelPath, String> {
         Some(path) => RelPath::new(&path.to_string_lossy()),
         None => RelPath::new(&spec.defaults.manifest),
     }
-}
-
-/// Where the shipped registry lives when `--assets` is not given.
-///
-/// The package puts `assets/` next to the binary, one directory up from the
-/// executable. During development the binary sits under `target/`, so fall
-/// back to the crate's own registry.
-fn default_assets_root(args: &Cli, spec: &Spec) -> Result<PathBuf, String> {
-    if let Some(root) = &args.common.assets {
-        return Ok(root.clone());
-    }
-    let relative = &spec.defaults.assets;
-
-    let executable =
-        std::env::current_exe().map_err(|e| format!("cannot locate the running binary: {e}"))?;
-    let here = executable
-        .parent()
-        .ok_or_else(|| "cannot locate the running binary".to_string())?;
-    let packaged = here.parent().unwrap_or(here).join(relative);
-    if packaged.is_dir() {
-        return Ok(packaged);
-    }
-
-    let dev = Path::new(env!("CARGO_MANIFEST_DIR")).join(relative);
-    if dev.is_dir() {
-        return Ok(dev);
-    }
-
-    Err(format!(
-        "registry not found: looked for {} and {}; pass --assets",
-        packaged.display(),
-        dev.display()
-    ))
 }

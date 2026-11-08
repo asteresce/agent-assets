@@ -979,10 +979,11 @@ fn rendering_is_deterministic_across_runs() {
     }
 }
 
-/// The shipped registry, rendered by a fixed config, has to produce exactly
-/// these bytes. This is the "emitted bytes are a function of the pinned
-/// inputs" guarantee, so an engine change can never quietly rewrite what a
-/// consumer sees.
+/// The registry compiled into the binary, rendered by a fixed config, has to
+/// produce exactly these bytes. This is the "emitted bytes are a function of
+/// the pinned inputs" guarantee, so an engine change can never quietly rewrite
+/// what a consumer sees — and it is what a downloaded binary emits, with no
+/// `assets/` beside it.
 ///
 /// Editing an asset changes its hash: update this golden in the same commit.
 /// That is not friction, it is the review.
@@ -1031,13 +1032,10 @@ fn rendering_the_shipped_registry_is_pinned() {
     )
     .unwrap();
 
-    let registry = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("assets");
     let mut command = std::process::Command::cargo_bin("agent-assets").unwrap();
     command
         .args(["sync", "--project"])
         .arg(&project)
-        .args(["--assets"])
-        .arg(registry)
         .args(["--config"])
         .arg(project.join("agent-assets.json"))
         .args(["--manifest", "agent-assets.lock"]);

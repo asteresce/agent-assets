@@ -6,7 +6,7 @@
 //! pure function of the source and the injection map.
 
 use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use serde_json::Value;
 
@@ -83,8 +83,7 @@ fn render_file(
     asset: &FileAsset,
     frontmatter: &BTreeMap<String, Value>,
 ) -> Result<Vec<u8>, String> {
-    let source = read_text(&asset.path)?;
-    Ok(render_markdown(&source, frontmatter).into_bytes())
+    Ok(render_markdown(text(&asset.bytes)?, frontmatter).into_bytes())
 }
 
 fn render_dir(
@@ -92,22 +91,21 @@ fn render_dir(
     frontmatter: &BTreeMap<String, Value>,
 ) -> Result<Vec<(PathBuf, Vec<u8>)>, String> {
     let mut out = Vec::with_capacity(asset.files.len());
-    for relative in &asset.files {
-        let absolute = asset.path.join(relative);
+    for (relative, bytes) in &asset.files {
         let bytes = if asset.is_entry(relative) {
-            let source = read_text(&absolute)?;
-            render_markdown(&source, frontmatter).into_bytes()
+            render_markdown(text(bytes)?, frontmatter).into_bytes()
         } else {
-            std::fs::read(&absolute)
-                .map_err(|e| format!("cannot read {}: {e}", absolute.display()))?
+            bytes.clone()
         };
         out.push((relative.clone(), bytes));
     }
     Ok(out)
 }
 
-fn read_text(path: &Path) -> Result<String, String> {
-    std::fs::read_to_string(path).map_err(|e| format!("cannot read {}: {e}", path.display()))
+/// The entry file is Markdown, so it has to be text. Artifacts are never
+/// passed through here: they are copied verbatim, whatever they hold.
+fn text(bytes: &[u8]) -> Result<&str, String> {
+    std::str::from_utf8(bytes).map_err(|e| format!("asset entry is not valid UTF-8: {e}"))
 }
 
 #[cfg(test)]
@@ -266,10 +264,9 @@ Keep secrets safe.
 
     #[test]
     fn a_file_asset_renders_its_one_file() {
-        let dir = tempfile::TempDir::new().unwrap();
-        let path = dir.path().join("security.md");
-        std::fs::write(&path, "## Summary\n\nA.\n").unwrap();
-        let asset = Asset::File(FileAsset { path: path.clone() });
+        let asset = Asset::File(FileAsset {
+            bytes: b"## Summary\n\nA.\n".to_vec(),
+        });
         match render_asset(&asset, &map(json!({"owner": "x"}))).unwrap() {
             Rendered::File(bytes) => {
                 assert_eq!(bytes, b"---\nowner: x\n---\n\n## Summary\n\nA.\n");
@@ -280,24 +277,15 @@ Keep secrets safe.
 
     #[test]
     fn a_directory_asset_styles_the_entry_and_copies_artifacts_verbatim() {
-        let dir = tempfile::TempDir::new().unwrap();
-        let root = dir.path().join("tdd");
-        std::fs::create_dir_all(&root).unwrap();
-        std::fs::write(
-            root.join("SKILL.md"),
-            "---\nold: 1\n---\n\n## Description\n",
-        )
-        .unwrap();
-        std::fs::write(root.join("checklist.md"), "- plan\n").unwrap();
-        std::fs::write(root.join("raw.bin"), [0u8, 1, 2, 3]).unwrap();
-
         let asset = Asset::Dir(DirAsset {
-            path: root,
             entry: PathBuf::from("SKILL.md"),
             files: vec![
-                PathBuf::from("SKILL.md"),
-                PathBuf::from("checklist.md"),
-                PathBuf::from("raw.bin"),
+                (
+                    PathBuf::from("SKILL.md"),
+                    b"---\nold: 1\n---\n\n## Description\n".to_vec(),
+                ),
+                (PathBuf::from("checklist.md"), b"- plan\n".to_vec()),
+                (PathBuf::from("raw.bin"), vec![0u8, 1, 2, 3]),
             ],
         });
 

@@ -776,7 +776,7 @@ mod tests {
         crate::apply::run(&first, &world.project, &Manifest::default(), false).unwrap();
 
         fs::write(
-            world.registry.root().join("rules/security.md"),
+            world.registry.root().unwrap().join("rules/security.md"),
             "## Summary\n\nNew text.\n\n## Guidelines\n\n- A.\n",
         )
         .unwrap();

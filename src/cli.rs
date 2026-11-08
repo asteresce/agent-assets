@@ -35,7 +35,7 @@ pub struct Common {
     #[arg(long, global = true, value_name = "FILE")]
     pub config: Option<PathBuf>,
 
-    /// Asset registry root (default: the one shipped with this binary)
+    /// Asset registry root (default: the registry compiled into this binary)
     #[arg(long, global = true, value_name = "DIR")]
     pub assets: Option<PathBuf>,
 
