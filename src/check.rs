@@ -14,13 +14,7 @@ use crate::report::{Line, Status};
 pub fn run(plan: &Plan) -> Vec<Line> {
     plan.problems
         .iter()
-        .map(|problem| {
-            Line::new(
-                problem.status(),
-                problem.path().to_path_buf(),
-                problem.origin().cloned(),
-            )
-        })
+        .map(|problem| Line::new(problem.status, problem.path.clone(), problem.origin.clone()))
         .collect()
 }
 
@@ -40,13 +34,13 @@ pub fn status(plan: &Plan) -> Vec<Line> {
         .map(|state| state.path.as_path())
         .collect();
     for problem in &plan.problems {
-        if emitted.contains(problem.path()) {
+        if emitted.contains(problem.path.as_path()) {
             continue;
         }
         lines.push(Line::new(
-            problem.status(),
-            problem.path().to_path_buf(),
-            problem.origin().cloned(),
+            problem.status,
+            problem.path.clone(),
+            problem.origin.clone(),
         ));
     }
     lines
@@ -81,7 +75,7 @@ pub fn summary(plan: &Plan) -> String {
         let n = plan
             .problems
             .iter()
-            .filter(|problem| problem.status() == status)
+            .filter(|problem| problem.status == status)
             .count();
         if n > 0 {
             parts.push(counted(n, word, &format!("{word}s")));
@@ -121,8 +115,8 @@ fn import_states(plan: &Plan) -> Vec<Status> {
             // An obstacle at the asset's own path outranks whatever sits
             // under it: there is nothing under it yet.
             for problem in &plan.problems {
-                if problem.path() == row.path.as_path() {
-                    raise(problem.status());
+                if problem.path == row.path {
+                    raise(problem.status);
                 }
             }
             worst

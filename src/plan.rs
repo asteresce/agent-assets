@@ -57,53 +57,22 @@ pub enum Action {
 }
 
 /// One thing `check` reports.
+///
+/// Shaped like [`FileState`] on purpose: the same three facts, with the
+/// attribution optional because a stray or an orphan belongs to no import.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Problem {
-    /// The rendered file is not on disk.
-    Missing { path: PathBuf, origin: Origin },
-    /// The file on disk differs from the render, and the manifest says the
-    /// difference is ours to correct.
-    Drift { path: PathBuf, origin: Origin },
-    /// The file on disk differs from the render and the manifest cannot
-    /// vouch for it: a human may have edited it.
-    Conflict { path: PathBuf, origin: Origin },
-    /// A file inside a managed asset directory that we did not render.
-    Extra { path: PathBuf },
-    /// An asset the manifest owns that the config no longer produces.
-    Orphan { path: PathBuf },
-    /// A JSON injection target that is not yet merged.
-    Inject { path: PathBuf },
+pub struct Problem {
+    pub status: Status,
+    pub path: PathBuf,
+    pub origin: Option<Origin>,
 }
 
 impl Problem {
-    pub fn status(&self) -> Status {
-        match self {
-            Problem::Missing { .. } => Status::Missing,
-            Problem::Drift { .. } => Status::Drift,
-            Problem::Conflict { .. } => Status::Conflict,
-            Problem::Extra { .. } => Status::Extra,
-            Problem::Orphan { .. } => Status::Orphan,
-            Problem::Inject { .. } => Status::Inject,
-        }
-    }
-
-    pub fn path(&self) -> &Path {
-        match self {
-            Problem::Missing { path, .. }
-            | Problem::Drift { path, .. }
-            | Problem::Conflict { path, .. }
-            | Problem::Extra { path }
-            | Problem::Orphan { path }
-            | Problem::Inject { path } => path,
-        }
-    }
-
-    pub fn origin(&self) -> Option<&Origin> {
-        match self {
-            Problem::Missing { origin, .. }
-            | Problem::Drift { origin, .. }
-            | Problem::Conflict { origin, .. } => Some(origin),
-            _ => None,
+    fn new(status: Status, path: impl Into<PathBuf>, origin: Option<Origin>) -> Problem {
+        Problem {
+            status,
+            path: path.into(),
+            origin,
         }
     }
 }
@@ -204,10 +173,11 @@ pub fn plan(
             });
             // `check` reports the wrong kind of thing as drift whether or not
             // we own it; only `sync` gets to decide whether to replace it.
-            asset_problems.push(Problem::Drift {
-                path: asset.asset_path.clone(),
-                origin: asset.origin.clone(),
-            });
+            asset_problems.push(Problem::new(
+                Status::Drift,
+                asset.asset_path.clone(),
+                Some(asset.origin.clone()),
+            ));
         }
     }
 
@@ -254,7 +224,7 @@ pub fn plan(
         for path in extra_files(project_root, &asset.asset_path, &asset.files)? {
             guard_ancestors(project_root, &path, &BTreeSet::new())?;
             removes.push(Action::Remove { path: path.clone() });
-            extra_problems.push(Problem::Extra { path });
+            extra_problems.push(Problem::new(Status::Extra, path, None));
         }
     }
 
@@ -271,9 +241,7 @@ pub fn plan(
                 removes.push(Action::Remove {
                     path: owned.path.clone(),
                 });
-                orphan_problems.push(Problem::Orphan {
-                    path: owned.path.clone(),
-                });
+                orphan_problems.push(Problem::new(Status::Orphan, owned.path.clone(), None));
             }
         }
     }
@@ -439,37 +407,27 @@ fn classify(
         kind,
         origin: origin.clone(),
     };
-    let missing = || Problem::Missing {
-        path: path.clone(),
-        origin: origin.clone(),
-    };
-    let drift = || Problem::Drift {
-        path: path.clone(),
-        origin: origin.clone(),
-    };
-    let conflict = || Problem::Conflict {
-        path: path.clone(),
-        origin: origin.clone(),
-    };
 
     // A file under a blocked asset root still gets written — the obstacle
     // above it is cleared first — but the asset's own `DRIFT` already says
-    // what is wrong, so it is not repeated per file.
-    let mut report = |problem: Problem, status: Status, problems: &mut Vec<Problem>| {
+    // what is wrong, so it is not repeated per file. The state is recorded
+    // either way: `status` must not call a file clean when the run is going
+    // to rewrite it.
+    let mut report = |status: Status, problems: &mut Vec<Problem>| {
         states.push(FileState {
             path: path.clone(),
             origin: origin.clone(),
             status,
         });
         if !blocked {
-            problems.push(problem);
+            problems.push(Problem::new(status, path.clone(), Some(origin.clone())));
         }
     };
 
     match disk {
         Disk::Absent => {
             writes.push(write(WriteKind::Fresh));
-            report(missing(), Status::Missing, problems);
+            report(Status::Missing, problems);
         }
         Disk::File(on_disk) if on_disk == bytes => {
             states.push(FileState {
@@ -483,10 +441,10 @@ fn classify(
             let ours = manifest.and_then(|m| m.hash_of(path)) == Some(written.as_str());
             if ours {
                 writes.push(write(WriteKind::Update));
-                report(drift(), Status::Drift, problems);
+                report(Status::Drift, problems);
             } else {
                 writes.push(write(WriteKind::Conflict));
-                report(conflict(), Status::Conflict, problems);
+                report(Status::Conflict, problems);
             }
         }
         Disk::Obstacle => {
@@ -494,7 +452,7 @@ fn classify(
             // drift whatever we own; `sync` decides separately whether it is
             // ours to replace.
             writes.push(write(WriteKind::Fresh));
-            report(drift(), Status::Drift, problems);
+            report(Status::Drift, problems);
         }
     }
     Ok(())
@@ -543,7 +501,7 @@ fn plan_injections(
                 path: target.clone(),
                 content: merged,
             });
-            problems.push(Problem::Inject { path: target });
+            problems.push(Problem::new(Status::Inject, target, None));
         }
     }
 
@@ -778,7 +736,7 @@ mod tests {
     fn kinds(plan: &Plan) -> Vec<(&'static str, String)> {
         plan.problems
             .iter()
-            .map(|p| (p.status().word(), p.path().display().to_string()))
+            .map(|p| (p.status.word(), p.path.display().to_string()))
             .collect()
     }
 
@@ -1108,7 +1066,7 @@ mod tests {
             planned
                 .problems
                 .iter()
-                .all(|p| p.status() != Status::Conflict),
+                .all(|p| p.status != Status::Conflict),
             "{:?}",
             planned.problems
         );
