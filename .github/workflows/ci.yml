@@ -12,7 +12,7 @@ permissions:
   contents: read
 
 jobs:
-  test:
+  rust:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -29,3 +29,19 @@ jobs:
 
       - name: Test
         run: cargo test
+
+  # The flake is how this reaches people, so it is checked too: the package,
+  # the apps, the dev shell and the flake-parts module all have to evaluate
+  # and build. The package build runs the behaviour suite again, which is
+  # the price of knowing the Nix path is not quietly broken.
+  nix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: cachix/install-nix-action@v31
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Check the flake
+        run: nix flake check
