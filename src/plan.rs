@@ -469,7 +469,7 @@ fn plan_injections(
 
     for (target, content) in combine_injections(config)? {
         for asset in resolved {
-            if target == asset.asset_path || target.starts_with(&asset.asset_path) {
+            if files::is_under(&target, &asset.asset_path) {
                 return Err(format!(
                     "injection target {} collides with the asset {}",
                     target.display(),
@@ -642,11 +642,7 @@ fn custom_files(
         }
         files::walk_files(&absolute, &root, &mut found)?;
     }
-    found.retain(|path| {
-        !owned
-            .iter()
-            .any(|asset| path == asset || path.starts_with(asset))
-    });
+    found.retain(|path| !owned.iter().any(|asset| files::is_under(path, asset)));
     found.sort();
     found.dedup();
     Ok(found)

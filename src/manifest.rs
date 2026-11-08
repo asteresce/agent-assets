@@ -22,13 +22,12 @@
 //! of the *source* — hashing the rendered output catches an injection change
 //! too.
 
-use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use crate::files::install_file;
+use crate::files::{install_file, is_under};
 
 /// The manifest: every asset this project's sync owns.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Deserialize, Serialize)]
@@ -87,9 +86,7 @@ impl Manifest {
     /// This is what makes a path ours to overwrite or delete. Everything else
     /// under a category root belongs to the project and is never touched.
     pub fn owns(&self, relpath: &Path) -> bool {
-        self.0
-            .iter()
-            .any(|asset| relpath == asset.path || relpath.starts_with(&asset.path))
+        self.0.iter().any(|asset| is_under(relpath, &asset.path))
     }
 }
 
@@ -120,13 +117,7 @@ pub fn store(path: &Path, manifest: &Manifest) -> Result<(), String> {
 
 /// The hash of `bytes` as the manifest records it.
 pub fn hash_bytes(bytes: &[u8]) -> String {
-    let digest = Sha256::digest(bytes);
-    let mut out = String::with_capacity(7 + digest.len() * 2);
-    out.push_str("sha256:");
-    for byte in digest {
-        let _ = write!(out, "{byte:02x}");
-    }
-    out
+    format!("sha256:{:x}", Sha256::digest(bytes))
 }
 
 #[cfg(test)]

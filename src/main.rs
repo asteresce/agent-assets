@@ -15,9 +15,9 @@ use agent_assets::cli::{self, Cli, Command};
 use agent_assets::config::{Config, RelPath};
 use agent_assets::manifest::{self, Manifest};
 use agent_assets::plan;
-use agent_assets::registry::{Asset, Registry};
+use agent_assets::registry::{Asset, AssetKind, Registry};
 use agent_assets::render;
-use agent_assets::report::{Reporter, Status};
+use agent_assets::report::{self, Reporter, Status};
 use agent_assets::spec::Spec;
 
 fn main() -> ExitCode {
@@ -195,8 +195,8 @@ fn list(registry: &Registry) -> Result<u8, String> {
 
     for (name, entry) in names.iter().zip(&entries) {
         let kind = match entry.kind {
-            agent_assets::registry::AssetKind::File => "file",
-            agent_assets::registry::AssetKind::Dir => "dir",
+            AssetKind::File => "file",
+            AssetKind::Dir => "dir",
         };
         println!(
             "{name:<width$}  {kind:<4}  {:>6}  {}",
@@ -208,26 +208,17 @@ fn list(registry: &Registry) -> Result<u8, String> {
     }
 
     let total: usize = entries.iter().map(|entry| entry.size).sum();
-    let per_category: Vec<String> = {
-        let mut seen: Vec<&str> = entries
-            .iter()
-            .map(|entry| entry.category.as_str())
-            .collect();
-        seen.sort();
-        seen.dedup();
-        seen.into_iter()
-            .map(|category| {
-                let n = entries
-                    .iter()
-                    .filter(|entry| entry.category == category)
-                    .count();
-                format!("{category}: {n}")
-            })
-            .collect()
-    };
+    let mut per_category: BTreeMap<&str, usize> = BTreeMap::new();
+    for entry in &entries {
+        *per_category.entry(entry.category.as_str()).or_default() += 1;
+    }
+    let per_category = per_category
+        .iter()
+        .map(|(category, n)| format!("{category}: {n}"))
+        .collect::<Vec<_>>();
     println!(
         "{} · {total} bytes · {}",
-        counted(entries.len(), "asset", "assets"),
+        report::counted(entries.len(), "asset", "assets"),
         per_category.join(", ")
     );
     Ok(0)
@@ -325,8 +316,4 @@ fn page(bytes: &[u8]) -> Result<u8, String> {
         .write_all(bytes)
         .map_err(|e| format!("cannot write: {e}"))?;
     Ok(0)
-}
-
-fn counted(n: usize, one: &str, many: &str) -> String {
-    format!("{n} {}", if n == 1 { one } else { many })
 }

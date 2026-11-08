@@ -158,6 +158,11 @@ impl Reporter {
     }
 }
 
+/// `3 assets`, `1 asset`: a count with the noun it belongs to.
+pub fn counted(n: usize, one: &str, many: &str) -> String {
+    format!("{n} {}", if n == 1 { one } else { many })
+}
+
 fn should_color(when: ColorWhen) -> bool {
     match when {
         ColorWhen::Always => true,

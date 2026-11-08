@@ -8,7 +8,7 @@ use std::collections::BTreeSet;
 use std::path::Path;
 
 use crate::plan::Plan;
-use crate::report::{Line, Status};
+use crate::report::{self, Line, Status};
 
 /// The lines `check` prints, in the order it prints them. Empty means clean.
 pub fn run(plan: &Plan) -> Vec<Line> {
@@ -57,7 +57,7 @@ pub fn summary(plan: &Plan) -> String {
     let mut parts = Vec::new();
 
     let per_import = import_states(plan);
-    parts.push(counted(per_import.len(), "import", "imports"));
+    parts.push(report::counted(per_import.len(), "import", "imports"));
     for status in [
         Status::Clean,
         Status::Extra,
@@ -71,27 +71,27 @@ pub fn summary(plan: &Plan) -> String {
         }
     }
 
-    for (status, word) in [(Status::Orphan, "orphan"), (Status::Inject, "injection")] {
+    // Orphans and injections belong to no import: one is gone, the other is
+    // not a file that could be in a state.
+    for (status, one, many) in [
+        (Status::Orphan, "orphan", "orphans"),
+        (Status::Inject, "injection", "injections"),
+    ] {
         let n = plan
             .problems
             .iter()
             .filter(|problem| problem.status == status)
             .count();
         if n > 0 {
-            parts.push(counted(n, word, &format!("{word}s")));
+            parts.push(report::counted(n, one, many));
         }
     }
 
-    let custom = plan.custom.len();
-    parts.push(format!(
-        "{custom} {}",
-        if custom == 1 {
-            "custom file"
-        } else {
-            "custom files"
-        }
+    parts.push(report::counted(
+        plan.custom.len(),
+        "custom file",
+        "custom files",
     ));
-
     parts.join(" · ")
 }
 
@@ -122,8 +122,4 @@ fn import_states(plan: &Plan) -> Vec<Status> {
             worst
         })
         .collect()
-}
-
-fn counted(n: usize, one: &str, many: &str) -> String {
-    format!("{n} {}", if n == 1 { one } else { many })
 }

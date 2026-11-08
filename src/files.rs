@@ -132,6 +132,13 @@ pub fn walk_files(absolute: &Path, relative: &Path, out: &mut Vec<PathBuf>) -> R
     Ok(())
 }
 
+/// True when `path` is `root` or lives under it — the question behind every
+/// "is this ours to touch?" decision. `starts_with` alone would say the same,
+/// but the disjunct is spelled out so a reader need not know that.
+pub fn is_under(path: &Path, root: &Path) -> bool {
+    path == root || path.starts_with(root)
+}
+
 /// A sibling temp name that cannot collide with another writer in this
 /// process or another one.
 fn temporary_sibling(path: &Path) -> PathBuf {

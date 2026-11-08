@@ -794,10 +794,7 @@ fn the_manifest_records_a_hash_for_every_emitted_file() {
         .unwrap();
     assert_eq!(
         rule["files"][0]["hash"].as_str().unwrap(),
-        format!(
-            "sha256:{}",
-            sha256_hex(format!("{RULES_FM}{SECURITY}").as_bytes())
-        )
+        agent_assets::manifest::hash_bytes(format!("{RULES_FM}{SECURITY}").as_bytes())
     );
 }
 
@@ -1275,10 +1272,3 @@ fn status_counts_custom_files_alongside_ours() {
 }
 
 // ---------------------------------------------------------------- helpers
-
-/// The SHA-256 of `bytes`, spelled the way the manifest spells it.
-fn sha256_hex(bytes: &[u8]) -> String {
-    use sha2::{Digest, Sha256};
-    let digest = Sha256::digest(bytes);
-    digest.iter().map(|b| format!("{b:02x}")).collect()
-}

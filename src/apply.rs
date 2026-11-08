@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 
 use serde_json::Value;
 
-use crate::files::{guard_ancestors, install_file};
+use crate::files::{guard_ancestors, install_file, is_under};
 use crate::manifest::Manifest;
 use crate::plan::{Action, Plan, WriteKind};
 use crate::report::{Line, Status};
@@ -116,9 +116,25 @@ fn owned_paths(manifest: &Manifest) -> BTreeSet<PathBuf> {
 }
 
 fn owns(owned: &BTreeSet<PathBuf>, path: &Path) -> bool {
-    owned
-        .iter()
-        .any(|asset| path == asset || path.starts_with(asset))
+    owned.iter().any(|asset| is_under(path, asset))
+}
+
+/// A path the manifest does not own is not ours to replace or remove. This
+/// is the refusal every destructive action goes through first.
+fn require_owned(
+    owned: &BTreeSet<PathBuf>,
+    project_root: &Path,
+    path: &Path,
+    verb: &str,
+) -> Result<(), String> {
+    if owns(owned, path) {
+        Ok(())
+    } else {
+        Err(format!(
+            "refusing to {verb} unowned {}",
+            project_root.join(path).display()
+        ))
+    }
 }
 
 // ---------------------------------------------------------------- writes
@@ -136,12 +152,7 @@ fn replace_obstacle(
     if !is_mismatch(&absolute, want_dir)? {
         return Ok(());
     }
-    if !owns(owned, path) {
-        return Err(format!(
-            "refusing to replace unowned {}",
-            absolute.display()
-        ));
-    }
+    require_owned(owned, project_root, path, "replace")?;
     let metadata = std::fs::symlink_metadata(&absolute)
         .map_err(|e| format!("cannot inspect {}: {e}", absolute.display()))?;
     if metadata.file_type().is_symlink() || metadata.is_file() {
@@ -179,12 +190,7 @@ fn remove_and_prune(
     path: &Path,
     owned: &BTreeSet<PathBuf>,
 ) -> Result<(), String> {
-    if !owns(owned, path) {
-        return Err(format!(
-            "refusing to remove unowned {}",
-            project_root.join(path).display()
-        ));
-    }
+    require_owned(owned, project_root, path, "remove")?;
     let absolute = project_root.join(path);
     match std::fs::symlink_metadata(&absolute) {
         Ok(metadata) if metadata.file_type().is_symlink() => std::fs::remove_file(&absolute),
