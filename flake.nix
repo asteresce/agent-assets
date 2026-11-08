@@ -51,6 +51,17 @@
           render = app "render";
         });
 
+      # A shell that can build, test and publish the crate. The engine is
+      # pure Rust, but something has to link it, and a bare `cargo` on NixOS
+      # has no C toolchain to reach for.
+      devShells = forAllSystems (system:
+        let pkgs = nixpkgs.legacyPackages.${system}; in
+        {
+          default = pkgs.mkShell {
+            packages = with pkgs; [ cargo rustc rustfmt clippy stdenv.cc ];
+          };
+        });
+
       # The package build runs `cargo test`, so checking it covers the unit
       # tests, the behaviour suite, the registry conformance and the golden.
       checks = forAllSystems (system: {

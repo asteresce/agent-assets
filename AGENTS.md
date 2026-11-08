@@ -86,6 +86,10 @@ behaviour's executable specification.
 
 ## Verifying
 
+Run these inside `nix develop` first: it provides the Rust toolchain and the
+C linker that `cargo` needs to link a binary, which a bare `cargo` on NixOS
+does not have.
+
 ```bash
 cargo fmt --check                        # formatting, as CI runs it
 cargo clippy --all-targets -- -D warnings # lints, as CI runs them
