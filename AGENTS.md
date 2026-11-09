@@ -44,6 +44,9 @@ and the tests are its executable form.
    - an h1 title, frontmatter, or any text before the first `##`;
    - an empty section (a subheading alone is not content).
 
+   `agent-assets validate` reports the same departures for one consumer's
+   config, alongside the config problems that would make a run undefined.
+
    Subheadings (`###` and below) are free. Fenced code blocks are opaque, so
    an example may contain headings of its own. Artifacts in a skill directory
    are free-form.
