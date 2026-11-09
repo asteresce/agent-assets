@@ -27,6 +27,10 @@ jobs:
         with:
           components: rustfmt, clippy
 
+      # After the toolchain: the cache key includes the rustc version, so
+      # selecting it first is what makes the key stable.
+      - uses: Swatinem/rust-cache@v2
+
       - name: Format
         run: cargo fmt --check
 
@@ -48,6 +52,17 @@ jobs:
       - uses: cachix/install-nix-action@v31
         with:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
+
+      # The crate dependencies are built from source rather than fetched from
+      # cache.nixos.org, so a cold runner pays for all of them every push and
+      # nothing else in this workflow restores them. Keyed on the lock files,
+      # because those are what the dependency builds are derived from; a
+      # change to src/ still reuses them.
+      - name: Cache the Nix store
+        uses: nix-community/cache-nix-action@v7
+        with:
+          primary-key: nix-${{ runner.os }}-${{ hashFiles('**/*.nix', 'flake.lock', 'Cargo.toml', 'Cargo.lock') }}
+          restore-prefixes-first-match: nix-${{ runner.os }}-
 
       - name: Check the flake
         run: nix flake check
