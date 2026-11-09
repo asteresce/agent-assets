@@ -20,6 +20,12 @@ updates:
     directory: "/"
     schedule:
       interval: weekly
+    # The msrv job runs on exactly this toolchain because it is the floor
+    # Cargo.toml declares. Moving the pin would make the job test whatever it
+    # became, and "minimum Rust" would drift upward without anyone deciding
+    # it should -- it moves when rust-version moves, and not otherwise.
+    ignore:
+      - dependency-name: "dtolnay/rust-toolchain"
     groups:
       actions:
         patterns: ["*"]
