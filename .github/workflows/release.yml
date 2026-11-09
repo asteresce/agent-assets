@@ -89,6 +89,27 @@ jobs:
           tar czf "$archive.tar.gz" -C "$stage" \
             agent-assets docs spec.json README.md LICENSE
 
+      # Nothing else in this workflow ever opens an archive, and the tarball
+      # is what cargo binstall and mise unpack. Run the binary out of it
+      # before the artifact is uploaded: a binary sitting at the wrong root,
+      # built at the wrong version, or carrying an empty registry is the
+      # first thing a user hits, and the only thing nobody here would notice.
+      - name: The archive is what the installers expect
+        run: |
+          stage="$(mktemp -d)"
+          tar xzf "agent-assets-$version-${{ matrix.target }}.tar.gz" -C "$stage"
+          test -f "$stage/agent-assets"
+          test -d "$stage/docs"
+          test -f "$stage/spec.json"
+          test -f "$stage/README.md"
+          test -f "$stage/LICENSE"
+          # The version baked into the binary, not just the one in Cargo.toml.
+          test "$("$stage/agent-assets" --version)" = "agent-assets $version"
+          # The registry is compiled in. An empty one means build.rs never saw
+          # assets/, which nothing else in the pipeline would catch.
+          list="$("$stage/agent-assets" list)"
+          grep -qE "^[1-9][0-9]* asset" <<<"$list"
+
       - uses: actions/upload-artifact@v4
         with:
           name: agent-assets-${{ matrix.target }}
