@@ -12,6 +12,20 @@ repository = "https://github.com/asteresce/agent-assets"
 readme = "README.md"
 keywords = ["agent", "assets", "sync", "cli", "markdown"]
 categories = ["command-line-utilities", "development-tools"]
+# What crates.io gets. Everything else in the tree — AGENTS.md, the flake,
+# .github, opencode.json, deny.toml — is this repository's own machinery.
+# docs/ and spec.json are included because README links to them; assets/ and
+# build.rs because the binary cannot exist without them.
+include = [
+    "/build.rs",
+    "/src/**",
+    "/tests/**",
+    "/assets/**",
+    "/docs/**",
+    "/spec.json",
+    "/README.md",
+    "/LICENSE",
+]
 
 [lib]
 name = "agent_assets"
