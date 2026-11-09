@@ -21,7 +21,8 @@
 
     "build": {
       "mode": "primary",
-      "temperature": 0.2,
+      "model": "xiaomi-token-plan-sgp/mimo-v2.6-flash",
+      "temperature": 0.1,
       "permission": {
         "edit": "allow",
         "bash": {
