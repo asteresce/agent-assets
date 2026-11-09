@@ -255,4 +255,176 @@ mod tests {
         assert!(!project.join("x/y").exists());
         assert!(project.join("x").is_dir(), "x still holds keep.md");
     }
+
+    // ----------------------------------------------------- what is ours
+
+    fn owned(paths: &[&str]) -> BTreeSet<PathBuf> {
+        paths.iter().map(PathBuf::from).collect()
+    }
+
+    /// The refusal behind every destructive action. It is the only thing
+    /// standing between a mis-declared path and deleting somebody's file, and
+    /// the integration suite exercises it only through `sync`.
+    #[test]
+    fn a_path_the_manifest_does_not_own_is_refused() {
+        let dir = TempDir::new().unwrap();
+        let project = dir.path().join("project");
+        std::fs::create_dir_all(&project).unwrap();
+        std::fs::write(project.join("yours.md"), "not mine\n").unwrap();
+
+        let manifest = owned(&["mine.md"]);
+        assert!(require_owned(&manifest, &project, Path::new("mine.md"), "remove").is_ok());
+
+        let error = require_owned(&manifest, &project, Path::new("yours.md"), "remove")
+            .expect_err("an unowned path must be refused");
+        assert!(error.contains("refusing to remove unowned"), "{error}");
+        assert!(error.ends_with("yours.md"), "it names the path: {error}");
+        assert!(project.join("yours.md").exists(), "and touches nothing");
+    }
+
+    /// A directory asset owns everything inside it, not just the asset path
+    /// itself -- which is why dropping a whole skill directory works.
+    #[test]
+    fn everything_under_an_owned_asset_is_owned_as_well() {
+        let manifest = owned(&["skills/tdd"]);
+
+        assert!(owns(&manifest, Path::new("skills/tdd")));
+        assert!(owns(&manifest, Path::new("skills/tdd/SKILL.md")));
+        assert!(owns(&manifest, Path::new("skills/tdd/deep/nested.md")));
+
+        assert!(!owns(&manifest, Path::new("skills")));
+        assert!(
+            !owns(&manifest, Path::new("skills/tdd-other")),
+            "a sibling is not under it"
+        );
+        assert!(!owns(&manifest, Path::new("skills/tddx/SKILL.md")));
+    }
+
+    #[test]
+    fn removing_something_unowned_is_refused_before_it_is_touched() {
+        let dir = TempDir::new().unwrap();
+        let project = dir.path().join("project");
+        std::fs::create_dir_all(project.join("mine")).unwrap();
+        std::fs::write(project.join("yours.md"), "not mine\n").unwrap();
+
+        let manifest = owned(&["mine"]);
+        remove_and_prune(&project, Path::new("yours.md"), &manifest)
+            .expect_err("an unowned path must be refused");
+        assert!(project.join("yours.md").exists());
+    }
+
+    // ------------------------------------------------------- what we write
+
+    #[test]
+    fn a_missing_path_is_not_a_mismatch() {
+        let dir = TempDir::new().unwrap();
+        assert!(!is_mismatch(&dir.path().join("nothing"), false).unwrap());
+        assert!(!is_mismatch(&dir.path().join("nothing"), true).unwrap());
+    }
+
+    #[test]
+    fn the_wrong_kind_of_thing_at_a_path_is_a_mismatch() {
+        let dir = TempDir::new().unwrap();
+        let root = dir.path();
+        let file = root.join("file.md");
+        let directory = root.join("directory");
+        std::fs::write(&file, "x\n").unwrap();
+        std::fs::create_dir(&directory).unwrap();
+
+        assert!(
+            !is_mismatch(&file, false).unwrap(),
+            "a file where a file belongs"
+        );
+        assert!(
+            !is_mismatch(&directory, true).unwrap(),
+            "a directory where one belongs"
+        );
+        assert!(
+            is_mismatch(&directory, false).unwrap(),
+            "a directory where a file belongs"
+        );
+        assert!(
+            is_mismatch(&file, true).unwrap(),
+            "a file where a directory belongs"
+        );
+    }
+
+    /// A symlink is never the kind of thing we want, whatever it points at:
+    /// accepting one would mean following it out of the project.
+    #[test]
+    #[cfg(unix)]
+    fn a_symlink_at_a_path_is_always_a_mismatch() {
+        let dir = TempDir::new().unwrap();
+        let root = dir.path();
+        let target = root.join("target");
+        let link = root.join("link");
+        std::fs::write(&target, "x\n").unwrap();
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+
+        assert!(is_mismatch(&link, false).unwrap());
+        assert!(is_mismatch(&link, true).unwrap());
+    }
+
+    /// A link out of the project is unlinked, never traversed, so whatever it
+    /// points at survives.
+    #[test]
+    #[cfg(unix)]
+    fn removing_a_symlink_removes_the_link_and_leaves_the_referent() {
+        let dir = TempDir::new().unwrap();
+        let project = dir.path().join("project");
+        let outside = dir.path().join("outside");
+        std::fs::create_dir_all(project.join("skills")).unwrap();
+        std::fs::create_dir_all(&outside).unwrap();
+        std::fs::write(outside.join("precious.md"), "keep me\n").unwrap();
+        std::os::unix::fs::symlink(&outside, project.join("skills/tdd")).unwrap();
+
+        remove_and_prune(&project, Path::new("skills/tdd"), &owned(&["skills/tdd"])).unwrap();
+
+        assert!(!project.join("skills/tdd").exists(), "the link is gone");
+        assert!(
+            outside.join("precious.md").exists(),
+            "the referent is untouched"
+        );
+    }
+
+    #[test]
+    fn merge_json_creates_a_file_that_is_not_there() {
+        let dir = TempDir::new().unwrap();
+        let project = dir.path().join("project");
+        std::fs::create_dir_all(&project).unwrap();
+
+        merge_json(
+            &project,
+            Path::new("opencode.json"),
+            &serde_json::json!({"a": 1}),
+        )
+        .unwrap();
+
+        assert_eq!(
+            std::fs::read_to_string(project.join("opencode.json")).unwrap(),
+            "{\n  \"a\": 1\n}\n"
+        );
+    }
+
+    #[test]
+    fn merge_json_replaces_what_was_there() {
+        let dir = TempDir::new().unwrap();
+        let project = dir.path().join("project");
+        std::fs::create_dir_all(&project).unwrap();
+        std::fs::write(project.join("opencode.json"), "{ \"user\": 1 }\n").unwrap();
+
+        // The merge already happened where the plan was built; this writes the
+        // result, so an unrelated key that was there does not come back.
+        merge_json(
+            &project,
+            Path::new("opencode.json"),
+            &serde_json::json!({"a": 1}),
+        )
+        .unwrap();
+
+        assert_eq!(
+            std::fs::read_to_string(project.join("opencode.json")).unwrap(),
+            "{\n  \"a\": 1\n}\n"
+        );
+    }
 }
