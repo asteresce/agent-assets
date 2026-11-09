@@ -120,8 +120,13 @@ there is reported as `EXTRA` by `check` and removed by `sync`.
 ## From there
 
 ```bash
-nix run .#check   # clean now; exits 1 if anything drifts
+nix run .#check     # clean now; exits 1 if anything drifts
+nix run .#validate  # every config and registry problem, at once
 ```
+
+`validate` asks the same question from the other side: is the config sound,
+and does every asset follow the sections its category declares? It prints one
+problem per line, exits 1 when it found any, and writes nothing.
 
 `opencode.json` is deliberately not owned — the manifest never lists it, so
 `check` cannot delete it and edits to unrelated keys are never flagged. Only
