@@ -1,0 +1,28 @@
+# What `cargo deny check` permits in this crate's dependency tree.
+#
+# Every crate here is permissive; the list below is the whole set the tree
+# actually declares. A new one showing up is a decision to make, not an
+# inconvenience to work around, so `default` stays "deny" and only the four
+# we have are allowed.
+
+[licenses]
+allow = [
+    "MIT",
+    "Apache-2.0",
+    # unicode-ident declares `(MIT OR Apache-2.0) AND Unicode-3.0`.
+    "Unicode-3.0",
+    # one crate carries `Unlicense OR MIT`.
+    "Unlicense",
+]
+# The tree has one version of every crate today, but a duplicate is wasteful
+# rather than dangerous, so it warns instead of failing.
+[bans]
+multiple-versions = "warn"
+# Only crates.io, from the index Cargo.lock says. A git or unpinned source
+# reaching the tree would be a supply-chain change nobody made on purpose.
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+# A crate yanked after it was locked is the situation locking exists to catch.
+[advisories]
+yanked = "deny"

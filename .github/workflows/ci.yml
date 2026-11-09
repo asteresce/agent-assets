@@ -56,6 +56,16 @@ jobs:
       - name: Test on the minimum supported Rust
         run: cargo test
 
+  # Licences, banned sources, duplicate versions and known advisories. The
+  # advisories check subsumes `cargo audit`: cargo-deny reads the same RustSec
+  # database, so one action reports what two tools would report identically.
+  supply-chain:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: EmbarkStudios/cargo-deny-action@v2
+
   # The flake is how this reaches people, so it is checked too: the package,
   # the apps, the dev shell and the flake-parts module all have to evaluate
   # and build. The package build runs the behaviour suite again, which is
