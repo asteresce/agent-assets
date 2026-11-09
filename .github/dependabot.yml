@@ -1,0 +1,25 @@
+# Nothing was updating the pins before this: Cargo.lock and the action
+# revisions only moved when somebody remembered to move them.
+#
+# Nix is not a Dependabot ecosystem, so flake.lock still moves by hand —
+# `nix flake update crane` and friends — which is deliberate for something
+# that decides what binary your build produces.
+version: 2
+updates:
+  - package-ecosystem: cargo
+    directory: "/"
+    schedule:
+      interval: weekly
+    # Dependency updates and lock-file churn are separate concerns; a single
+    # PR per week is easier to review than one per crate.
+    groups:
+      dependencies:
+        patterns: ["*"]
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
