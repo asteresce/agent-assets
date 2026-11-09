@@ -2,7 +2,7 @@
 name = "agent-assets"
 version = "0.1.1"
 edition = "2024"
-description = "Provider-neutral shared agent assets with a small sync/check engine"
+description = "Provider-neutral shared agent assets with a small sync, check and validate engine"
 license = "MIT"
 repository = "https://github.com/asteresce/agent-assets"
 readme = "README.md"

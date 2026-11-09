@@ -1,4 +1,4 @@
-//! agent-assets — render, sync and check shared agent assets.
+//! agent-assets — render, sync, check and validate shared agent assets.
 //!
 //! The crate is a library plus a thin binary, so the tests drive the same
 //! types the binary uses. Reading order:

@@ -1,4 +1,4 @@
-//! agent-assets — render, sync and check shared agent assets.
+//! agent-assets — render, sync, check and validate shared agent assets.
 //!
 //! The binary is a thin shell over `agent_assets`: parse arguments, resolve
 //! the project and config, plan, then either report (`check`, `status`) or

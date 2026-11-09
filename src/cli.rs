@@ -15,8 +15,8 @@ use crate::spec::Spec;
 #[command(
     name = "agent-assets",
     version,
-    about = "Render, sync and check shared agent assets",
-    long_about = "Render, sync and check shared agent assets.\n\n\
+    about = "Render, sync, check and validate shared agent assets",
+    long_about = "Render, sync, check and validate shared agent assets.\n\n\
         sync renders the configured assets and reconciles them with the \
         project. check performs the same comparison and only reports. render \
         writes the expected asset tree to --out and touches nothing else. \
