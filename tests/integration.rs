@@ -1320,4 +1320,92 @@ fn status_counts_custom_files_alongside_ours() {
     );
 }
 
+// ============================================================= validate
+
+/// The fixture assets, given the sections their schema requires. The fixture
+/// itself only needs names to exist; `validate` reads the whole document, so
+/// a test that wants silence has to give them their sections too.
+fn conform(world: &World) {
+    world.write_asset(
+        "rules/security.md",
+        "## Summary\n\nKeep secrets safe.\n\n## Guidelines\n\n- A.\n",
+    );
+    world.write_asset(
+        "rules/code-style.md",
+        "## Summary\n\nPrefer clarity.\n\n## Guidelines\n\n- A.\n",
+    );
+    world.write_asset(
+        "skills/tdd/SKILL.md",
+        "## Description\n\nTest first.\n\n## Steps\n\n1. Do it.\n",
+    );
+    world.write_asset(
+        "agents/build.md",
+        "## Role\n\nBuilder.\n\n## Instructions\n\nBuild.\n",
+    );
+}
+
+#[test]
+fn validate_is_silent_when_the_config_and_registry_are_sound() {
+    let world = World::fixture();
+    conform(&world);
+    world.run(&["validate"]).ok().stdout_is("");
+}
+
+#[test]
+fn validate_reports_every_config_problem_at_once() {
+    let world = World::fixture();
+    let mut config = base_config();
+    config["rules"]["imports"] = json!(["missing-one", "missing-two"]);
+    world.write_config(&config);
+
+    let run = world.run(&["validate"]);
+    run.fails();
+    assert!(run.stdout.contains("missing-one"), "{}", run.stdout);
+    assert!(run.stdout.contains("missing-two"), "{}", run.stdout);
+}
+
+#[test]
+fn validate_reports_a_registry_asset_that_breaks_its_sections() {
+    let world = World::fixture();
+    conform(&world);
+    world.write_asset("rules/broken.md", "## Summary\n\nNo guidelines.\n");
+
+    let run = world.run(&["validate"]);
+    run.fails();
+    assert!(run.stdout.contains("rules/broken"), "{}", run.stdout);
+    assert!(
+        run.stdout.contains("missing required section 'Guidelines'"),
+        "{}",
+        run.stdout
+    );
+}
+
+#[test]
+fn validate_never_modifies_the_project() {
+    let world = World::fixture();
+    conform(&world);
+    world.sync().ok();
+    let before = world.read_project(".opencode/rules/security.md");
+
+    world.run(&["validate"]).ok();
+
+    assert_eq!(world.read_project(".opencode/rules/security.md"), before);
+}
+
+/// The pre-flight gates on config alone: every reason at once, on stderr,
+/// before anything is written. Registry problems do not stop a sync.
+#[test]
+fn sync_refuses_a_bad_config_with_every_reason_at_once() {
+    let world = World::fixture();
+    let mut config = base_config();
+    config["rules"]["imports"] = json!(["missing-one", "missing-two"]);
+    world.write_config(&config);
+
+    let run = world.sync();
+    run.fails();
+    assert!(run.stderr.contains("missing-one"), "{}", run.stderr);
+    assert!(run.stderr.contains("missing-two"), "{}", run.stderr);
+    assert!(!world.exists(".opencode/rules/security.md"));
+}
+
 // ---------------------------------------------------------------- helpers

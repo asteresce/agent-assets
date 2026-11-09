@@ -14,6 +14,7 @@ use std::path::{Path, PathBuf};
 
 use crate::config::Name;
 use crate::files;
+use crate::sections;
 use crate::spec::Spec;
 
 /// Which shape a registry entry has.
@@ -172,53 +173,9 @@ impl Entry {
             kind: asset.kind(),
             files: asset.file_count(),
             size: asset.total_size(),
-            summary: summary_of(asset.entry_bytes()),
+            summary: sections::summary(asset.entry_bytes()),
         }
     }
-}
-
-/// The first non-blank line inside the first `##` section. Assets carry no
-/// preamble and their first section is required, so this is always defined
-/// for a conforming asset.
-///
-/// Fenced code is opaque, the way `tests/registry.rs` reads headings: an
-/// example may contain `##` lines of its own, and a fence marker is not
-/// prose.
-fn summary_of(bytes: &[u8]) -> String {
-    let text = String::from_utf8_lossy(bytes);
-    let mut in_section = false;
-    let mut fence = 0usize;
-    for line in text.lines() {
-        let trimmed = line.trim_start();
-        let run = trimmed
-            .chars()
-            .take_while(|c| *c == '`' || *c == '~')
-            .count();
-        if fence > 0 {
-            // Only a run at least as long, with nothing behind it, closes.
-            if run >= fence && trimmed[run..].trim().is_empty() {
-                fence = 0;
-            }
-            continue;
-        }
-        if run >= 3 {
-            fence = run;
-            continue;
-        }
-        if line.starts_with("## ") {
-            in_section = true;
-            continue;
-        }
-        if !in_section {
-            continue;
-        }
-        let trimmed = line.trim();
-        if trimmed.is_empty() || trimmed.starts_with('#') {
-            continue;
-        }
-        return trimmed.to_string();
-    }
-    String::new()
 }
 
 /// A registry of shared assets.
@@ -584,39 +541,11 @@ mod tests {
                     rels(&asset),
                     vec![PathBuf::from("SKILL.md"), PathBuf::from("checklist.md")]
                 );
-                assert!(summary_of(asset.file(&asset.entry).unwrap_or(&[])).starts_with("Test"));
+                assert!(
+                    sections::summary(asset.file(&asset.entry).unwrap_or(&[])).starts_with("Test")
+                );
             }
             other => panic!("expected a directory asset, got {other:?}"),
         }
-    }
-
-    #[test]
-    fn a_summary_is_the_first_line_of_the_first_section() {
-        assert_eq!(
-            summary_of(b"## Summary\n\nKeep secrets safe.\n\n## Guidelines\n\n- A.\n"),
-            "Keep secrets safe."
-        );
-        assert_eq!(
-            summary_of(b"## Description\n### A subheading\n\nTest first.\n"),
-            "Test first."
-        );
-        assert_eq!(summary_of(b"# A title\n"), "");
-    }
-
-    #[test]
-    fn a_summary_treats_code_fences_as_opaque() {
-        assert_eq!(
-            summary_of(b"## Summary\n\n```bash\ngit commit\n```\n\nAfter the fence.\n"),
-            "After the fence."
-        );
-        assert_eq!(
-            summary_of(b"## Summary\n\n````\n## Fake\n````\n\nReal text.\n"),
-            "Real text."
-        );
-        // A longer fence is not closed by a shorter one.
-        assert_eq!(
-            summary_of(b"## Summary\n\n````\n```\nStill code.\n````\n\nProse.\n"),
-            "Prose."
-        );
     }
 }

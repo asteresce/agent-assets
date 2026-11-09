@@ -19,7 +19,8 @@ use crate::spec::Spec;
     long_about = "Render, sync and check shared agent assets.\n\n\
         sync renders the configured assets and reconciles them with the \
         project. check performs the same comparison and only reports. render \
-        writes the expected asset tree to --out and touches nothing else.\n\n\
+        writes the expected asset tree to --out and touches nothing else. \
+        validate reports every config and registry problem at once.\n\n\
         status is check without the filter: every path, matching or not. list \
         and show read the registry and need no project."
 )]
@@ -75,6 +76,9 @@ pub enum Command {
 
     /// Report every path, matching or not; always exits 0
     Status,
+
+    /// Report config and registry problems, all at once; exit 1 if any
+    Validate,
 
     /// List the assets the registry holds
     List,

@@ -2,8 +2,9 @@
 //!
 //! The binary is a thin shell over `agent_assets`: parse arguments, resolve
 //! the project and config, plan, then either report (`check`, `status`) or
-//! apply (`sync`). `render` writes the expected tree somewhere else entirely,
-//! and `list` and `show` read the registry without a project at all.
+//! apply (`sync`). `validate` reports config and registry problems without
+//! writing anything, `render` writes the expected tree somewhere else
+//! entirely, and `list` and `show` read the registry without a project at all.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -16,6 +17,7 @@ use agent_assets::plan;
 use agent_assets::registry::{Asset, AssetKind, Registry};
 use agent_assets::report::{self, Reporter, Status};
 use agent_assets::spec::Spec;
+use agent_assets::validate;
 
 fn main() -> ExitCode {
     match run() {
@@ -57,7 +59,7 @@ fn run() -> Result<u8, String> {
             // The rendered form depends on the project's injections, so only
             // `--rendered` needs one. The bare form reads the registry alone.
             let project = if *rendered {
-                Some(open_project(&args, &spec)?)
+                Some(open_valid_project(&args, &spec, &registry)?)
             } else {
                 None
             };
@@ -65,12 +67,12 @@ fn run() -> Result<u8, String> {
         }
 
         Command::Render { out } => {
-            let project = open_project(&args, &spec)?;
+            let project = open_valid_project(&args, &spec, &registry)?;
             render(&project.config, &registry, &spec, out)
         }
 
         Command::Check => {
-            let project = open_project(&args, &spec)?;
+            let project = open_valid_project(&args, &spec, &registry)?;
             let plan = plan_of(&project, &registry, &spec)?;
             let lines = agent_assets::check::run(&plan);
             for line in &lines {
@@ -81,7 +83,7 @@ fn run() -> Result<u8, String> {
         }
 
         Command::Status => {
-            let project = open_project(&args, &spec)?;
+            let project = open_valid_project(&args, &spec, &registry)?;
             let plan = plan_of(&project, &registry, &spec)?;
             for line in &agent_assets::check::status(&plan) {
                 reporter.print(line);
@@ -90,8 +92,17 @@ fn run() -> Result<u8, String> {
             Ok(0)
         }
 
-        Command::Sync => {
+        Command::Validate => {
             let project = open_project(&args, &spec)?;
+            let problems = validate::validate(&project.config, &registry, &spec);
+            for problem in &problems {
+                println!("{problem}");
+            }
+            Ok(u8::from(!problems.is_empty()))
+        }
+
+        Command::Sync => {
+            let project = open_valid_project(&args, &spec, &registry)?;
             let previous = load_manifest(&project.manifest)?;
             let plan = plan::plan(
                 &project.config,
@@ -128,6 +139,23 @@ fn open_project(args: &Cli, spec: &Spec) -> Result<Project, String> {
         config,
         manifest,
     })
+}
+
+/// The project, but only when its config is sound.
+///
+/// A config that cannot produce a well-defined run — an import that does not
+/// resolve, two imports fighting over a path, an injection aimed at a file an
+/// asset owns — is refused here with every reason at once, before anything is
+/// written. Registry problems are not a gate: `validate` reports those, and a
+/// malformed asset still syncs.
+fn open_valid_project(args: &Cli, spec: &Spec, registry: &Registry) -> Result<Project, String> {
+    let project = open_project(args, spec)?;
+    let problems = validate::config_problems(&project.config, registry, spec);
+    if problems.is_empty() {
+        Ok(project)
+    } else {
+        Err(problems.join("\n"))
+    }
 }
 
 fn plan_of(project: &Project, registry: &Registry, spec: &Spec) -> Result<plan::Plan, String> {

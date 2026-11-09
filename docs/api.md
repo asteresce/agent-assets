@@ -201,6 +201,7 @@ situations — see
 agent-assets sync
 agent-assets check
 agent-assets status
+agent-assets validate
 agent-assets render --out DIR
 agent-assets list
 agent-assets show <category>/<name> [--rendered]
@@ -231,12 +232,26 @@ and straight out otherwise so `show` still composes with a pipe.
 
 `status` is `check` without the filter and always exits 0.
 
+`validate` reports every problem with the config and the registry at once,
+rather than the first one each command would hit: an import that does not
+resolve, two imports fighting over one output path, an injection aimed at a
+file an asset owns, and any asset whose `##` sections depart from the schema
+its category declares under `headings` in `spec.json`. It prints one problem
+per line, exits 1 when it found any, and modifies nothing. It needs a project,
+because the config half needs one.
+
+The config half is also a pre-flight: `sync`, `check`, `status`, `render` and
+`show --rendered` refuse with every reason at once before writing anything.
+The registry half is never a gate — a malformed asset still syncs, because it
+is a quality problem in the registry rather than in this project's config.
+
 Output tokens: `check` prints `MISSING`, `DRIFT`, `EXTRA`, `ORPHAN`,
 `INJECT`, `CONFLICT`; `status` prints those plus `CLEAN`; `sync` prints
 `WRITE`, `UPDATE`, `REMOVE`, `MERGE`, and `CONFLICT` for the ones it refused
 to touch. `check` and `sync` are silent when there is nothing to say.
-`render` writes the expected tree and touches nothing else — no manifest, no
-JSON injections, no project.
+`validate` prints plain problem lines rather than status tokens. `render`
+writes the expected tree and touches nothing else — no manifest, no JSON
+injections, no project.
 
 Status words are coloured on a terminal; paths stay plain so the output is
 greppable, and the `(from <category>/<name>)` attribution is dimmed.

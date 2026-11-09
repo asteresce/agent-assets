@@ -49,6 +49,7 @@
           sync = app "sync";
           check = app "check";
           status = app "status";
+          validate = app "validate";
           render = app "render";
           list = app "list";
           show = app "show";

@@ -139,7 +139,7 @@ pub fn plan(
     manifest: Option<&Manifest>,
     project_root: &Path,
 ) -> Result<Plan, String> {
-    let resolved = resolve(config, registry, spec)?;
+    let resolved = resolve(config, registry, spec).map_err(|errors| errors.join("\n"))?;
 
     // Nothing the plan touches may be reached through a symlinked directory:
     // the write would land outside the project. Directory asset roots are
@@ -289,7 +289,9 @@ pub fn expected_tree(
     registry: &Registry,
     spec: &Spec,
 ) -> Result<Vec<(PathBuf, Vec<u8>)>, String> {
-    Ok(tree_of(&resolve(config, registry, spec)?))
+    Ok(tree_of(
+        &resolve(config, registry, spec).map_err(|errors| errors.join("\n"))?,
+    ))
 }
 
 /// Every file `sync` would write for one asset, across all its imports, in
@@ -305,7 +307,8 @@ pub fn renders_for(
     category: &str,
     name: &str,
 ) -> Result<Vec<(PathBuf, Vec<u8>)>, String> {
-    Ok(resolve(config, registry, spec)?
+    Ok(resolve(config, registry, spec)
+        .map_err(|errors| errors.join("\n"))?
         .iter()
         .filter(|asset| asset.origin.category == category && asset.origin.name == name)
         .flat_map(|asset| asset.files.iter().cloned())
@@ -313,7 +316,7 @@ pub fn renders_for(
 }
 
 /// One import, rendered and placed.
-struct Resolved {
+pub(crate) struct Resolved {
     origin: Origin,
     asset_path: PathBuf,
     kind: AssetKind,
@@ -321,15 +324,34 @@ struct Resolved {
 }
 
 /// Render every import into the project-relative paths it owns. This is
-/// where name, destination and rename are turned into real paths, and where
-/// the plan refuses to start if two imports would fight over one.
-fn resolve(config: &Config, registry: &Registry, spec: &Spec) -> Result<Vec<Resolved>, String> {
+/// where name, destination and rename are turned into real paths.
+///
+/// Every reason it could not is collected rather than reported at the first:
+/// a config with four mistakes should say all four.
+pub(crate) fn resolve(
+    config: &Config,
+    registry: &Registry,
+    spec: &Spec,
+) -> Result<Vec<Resolved>, Vec<String>> {
     let mut resolved: Vec<Resolved> = Vec::new();
+    let mut errors: Vec<String> = Vec::new();
 
     for (category_name, category) in &config.0 {
-        let root = category.effective_root(category_name, spec)?;
+        let root = match category.effective_root(category_name, spec) {
+            Ok(root) => root,
+            Err(e) => {
+                errors.push(e);
+                continue;
+            }
+        };
         for import in &category.imports {
-            let asset = registry.load(category_name.as_str(), import.name.as_str())?;
+            let asset = match registry.load(category_name.as_str(), import.name.as_str()) {
+                Ok(asset) => asset,
+                Err(e) => {
+                    errors.push(e);
+                    continue;
+                }
+            };
             let kind = asset.kind();
             let target = import.target_dir(&root);
             let name = import.output_name().as_str();
@@ -341,12 +363,16 @@ fn resolve(config: &Config, registry: &Registry, spec: &Spec) -> Result<Vec<Reso
             let mut frontmatter = category.injections.frontmatter.clone();
             frontmatter.extend(import.injections.frontmatter.clone());
 
-            let files = match render::render_asset(&asset, &frontmatter)? {
-                Rendered::File(bytes) => vec![(asset_path.clone(), bytes)],
-                Rendered::Dir(entries) => entries
+            let files = match render::render_asset(&asset, &frontmatter) {
+                Ok(Rendered::File(bytes)) => vec![(asset_path.clone(), bytes)],
+                Ok(Rendered::Dir(entries)) => entries
                     .into_iter()
                     .map(|(relative, bytes)| (asset_path.join(relative), bytes))
                     .collect(),
+                Err(e) => {
+                    errors.push(e);
+                    continue;
+                }
             };
 
             resolved.push(Resolved {
@@ -361,18 +387,23 @@ fn resolve(config: &Config, registry: &Registry, spec: &Spec) -> Result<Vec<Reso
         }
     }
 
-    reject_collisions(&resolved)?;
+    errors.extend(reject_collisions(&resolved));
+    errors.extend(injection_collisions(config, &resolved));
+    if !errors.is_empty() {
+        return Err(errors);
+    }
     Ok(resolved)
 }
 
-/// Two imports must never fight over one path, and one asset must never land
-/// inside another — a directory asset is immutable, so a file dropped into it
-/// would be `EXTRA` the moment it was written.
-fn reject_collisions(resolved: &[Resolved]) -> Result<(), String> {
+/// Every way two imports would fight over the tree: the same output path,
+/// one asset emitted inside another, or the same file twice. Empty when they
+/// do not.
+fn reject_collisions(resolved: &[Resolved]) -> Vec<String> {
+    let mut errors: Vec<String> = Vec::new();
     let mut assets: BTreeSet<&Path> = BTreeSet::new();
     for asset in resolved {
         if !assets.insert(asset.asset_path.as_path()) {
-            return Err(format!(
+            errors.push(format!(
                 "two imports emit the same output path: {}",
                 asset.asset_path.display()
             ));
@@ -383,7 +414,7 @@ fn reject_collisions(resolved: &[Resolved]) -> Result<(), String> {
             if outer.asset_path != inner.asset_path
                 && inner.asset_path.starts_with(&outer.asset_path)
             {
-                return Err(format!(
+                errors.push(format!(
                     "{} is emitted inside the asset {}",
                     inner.asset_path.display(),
                     outer.asset_path.display()
@@ -395,14 +426,14 @@ fn reject_collisions(resolved: &[Resolved]) -> Result<(), String> {
     for asset in resolved {
         for (path, _) in &asset.files {
             if !files.insert(path.as_path()) {
-                return Err(format!(
+                errors.push(format!(
                     "two imports emit the same file: {}",
                     path.display()
                 ));
             }
         }
     }
-    Ok(())
+    errors
 }
 
 /// One planned file against the project tree.
@@ -487,16 +518,12 @@ fn plan_injections(
     let mut actions = Vec::new();
     let mut problems = Vec::new();
 
-    for (target, content) in combine_injections(config)? {
-        for asset in resolved {
-            if files::is_under(&target, &asset.asset_path) {
-                return Err(format!(
-                    "injection target {} collides with the asset {}",
-                    target.display(),
-                    asset.asset_path.display()
-                ));
-            }
-        }
+    let collisions = injection_collisions(config, resolved);
+    if !collisions.is_empty() {
+        return Err(collisions.join("\n"));
+    }
+
+    for (target, content) in combine_injections(config) {
         guard_ancestors(project_root, &target, &BTreeSet::new())?;
 
         let absolute = project_root.join(&target);
@@ -530,7 +557,7 @@ fn plan_injections(
 
 /// Fold every `injections.json` chunk aimed at one file into a single chunk,
 /// in config order.
-fn combine_injections(config: &Config) -> Result<Vec<(PathBuf, Value)>, String> {
+fn combine_injections(config: &Config) -> Vec<(PathBuf, Value)> {
     let mut by_target: BTreeMap<PathBuf, Vec<Value>> = BTreeMap::new();
     for category in config.0.values() {
         for chunk in &category.injections.json {
@@ -541,10 +568,28 @@ fn combine_injections(config: &Config) -> Result<Vec<(PathBuf, Value)>, String> 
                 .push(content);
         }
     }
-    Ok(by_target
+    by_target
         .into_iter()
         .map(|(target, chunks)| (target, merge::merge_chunks(chunks)))
-        .collect())
+        .collect()
+}
+
+/// Every JSON injection aimed at a file an asset would own. Merging into one
+/// would fight the render, so neither `sync` nor `validate` allows it.
+pub(crate) fn injection_collisions(config: &Config, resolved: &[Resolved]) -> Vec<String> {
+    let mut errors = Vec::new();
+    for (target, _) in combine_injections(config) {
+        for asset in resolved {
+            if files::is_under(&target, &asset.asset_path) {
+                errors.push(format!(
+                    "injection target {} collides with the asset {}",
+                    target.display(),
+                    asset.asset_path.display()
+                ));
+            }
+        }
+    }
+    errors
 }
 
 // ------------------------------------------------------------- project tree

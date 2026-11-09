@@ -5,13 +5,13 @@ puts them into a project tree: declarative, idempotent, and checkable in CI.
 
 ## What you get
 
-- `agent-assets` — one self-contained binary with `sync`, `check`, `render`,
-  `status`, `list` and `show`. The registry of shared assets is compiled
-  into it, so it runs anywhere with nothing installed beside it.
+- `agent-assets` — one self-contained binary with `sync`, `check`, `validate`,
+  `render`, `status`, `list` and `show`. The registry of shared assets is
+  compiled into it, so it runs anywhere with nothing installed beside it.
 - `assets/` — that registry's source, one directory per category (`rules/`,
   `skills/`, `agents/`).
-- A flake-parts module wiring `nix run .#sync`, `nix run .#check` and
-  `nix run .#status`.
+- A flake-parts module wiring `nix run .#sync`, `nix run .#check`,
+  `nix run .#status` and `nix run .#validate`.
 
 The engine targets Unix (Linux and macOS): its path-safety rules are Unix
 symlink semantics.
@@ -68,6 +68,7 @@ And run the engine:
 agent-assets list     # what the registry holds
 agent-assets sync     # write the assets into the project
 agent-assets check    # exit 1 if anything drifted (use it in CI)
+agent-assets validate # every config and registry problem, at once
 ```
 
 `--assets` swaps in a different registry — your own, or a pinned checkout —
@@ -122,9 +123,10 @@ For a Nix consumer the flake module wires the same engine in, pinned by your
 ```
 
 ```bash
-nix run .#sync     # write the assets into the project
-nix run .#check    # exit 1 if anything drifted (use it in CI)
-nix run .#status   # every path, matching or not; always exits 0
+nix run .#sync      # write the assets into the project
+nix run .#check     # exit 1 if anything drifted (use it in CI)
+nix run .#status    # every path, matching or not; always exits 0
+nix run .#validate  # every config and registry problem, at once
 ```
 
 ## How it behaves
@@ -251,6 +253,28 @@ CONFLICT .opencode/rules/security.md (from rules/security)
 An import counts once, as the worst of its files, so "clean" and "conflict"
 add up to the import count. The custom files are the ones under a category
 root that nobody owns — yours, and never touched.
+
+### Validation
+
+Before anything is written, every project command checks that the config can
+produce a well-defined run and refuses with **every** reason at once: an
+import that does not resolve, two imports fighting over one output path, an
+injection aimed at a file an asset owns. A config with four mistakes says all
+four, not one per run.
+
+`validate` runs that check and also reports registry problems — any asset
+whose `##` sections depart from the schema its category declares in
+[`spec.json`](spec.json). It prints one problem per line, exits 1 if it found
+any, and modifies nothing.
+
+```
+$ agent-assets validate
+rules/broken: missing required section 'Guidelines'
+```
+
+Registry problems are never a gate. A malformed asset still syncs: it is a
+quality problem in the registry, not in this project's config. `validate` is
+how you find out about it.
 
 ### `list` and `show`
 
