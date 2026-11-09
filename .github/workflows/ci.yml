@@ -40,6 +40,22 @@ jobs:
       - name: Test
         run: cargo test
 
+  # The floor, not the latest. edition 2024 needs 1.85 and crates.io reports
+  # rust-version to anyone deciding whether to install, so it has to be true --
+  # and `stable` alone never proves it, because stable is always ahead of it.
+  # Verified against 1.85.0: the whole suite passes there.
+  msrv:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@1.85.0
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Test on the minimum supported Rust
+        run: cargo test
+
   # The flake is how this reaches people, so it is checked too: the package,
   # the apps, the dev shell and the flake-parts module all have to evaluate
   # and build. The package build runs the behaviour suite again, which is

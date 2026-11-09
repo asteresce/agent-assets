@@ -2,6 +2,10 @@
 name = "agent-assets"
 version = "0.1.2"
 edition = "2024"
+# Verified by the `msrv` job in CI, not assumed: 1.85 is the floor for the
+# edition, and the dependencies were checked against it rather than taken
+# on trust. crates.io shows this to anyone deciding whether to install.
+rust-version = "1.85"
 description = "Provider-neutral shared agent assets with a small sync, check and validate engine"
 license = "MIT"
 repository = "https://github.com/asteresce/agent-assets"
