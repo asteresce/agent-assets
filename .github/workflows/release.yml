@@ -47,7 +47,7 @@ jobs:
             target: aarch64-apple-darwin
             musl: false
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.tag || github.ref_name }}
 
@@ -110,7 +110,7 @@ jobs:
           list="$("$stage/agent-assets" list)"
           grep -qE "^[1-9][0-9]* asset" <<<"$list"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: agent-assets-${{ matrix.target }}
           path: agent-assets-*.tar.gz
@@ -126,12 +126,12 @@ jobs:
       # Before download-artifact: a checkout cleans the workspace, and the
       # tarballs have to survive it. `fetch-depth: 0` is what makes the
       # previous tag and the commit list reachable.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.tag || github.ref_name }}
           fetch-depth: 0
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           merge-multiple: true
 
@@ -190,7 +190,7 @@ jobs:
     env:
       CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.ref_name }}
 
