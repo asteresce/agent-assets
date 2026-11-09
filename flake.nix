@@ -1,13 +1,15 @@
 {
   description = "Provider-neutral shared agent assets with a small sync/check engine";
 
-  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+  inputs = {
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    crane.url = "github:ipetkov/crane";
+  };
 
-  outputs = { self, nixpkgs }:
+  outputs = { self, nixpkgs, crane, ... }:
     let
       # One declaration for every default and label; see spec.json.
       spec = builtins.fromJSON (builtins.readFile ./spec.json);
-      manifest = builtins.fromTOML (builtins.readFile ./Cargo.toml);
       supportedSystems = [ "x86_64-linux" "aarch64-linux" "aarch64-darwin" "x86_64-darwin" ];
       forAllSystems = nixpkgs.lib.genAttrs supportedSystems;
     in
@@ -16,16 +18,32 @@
       flakeModules.default = import ./flake-module.nix self;
 
       packages = forAllSystems (system:
-        let pkgs = nixpkgs.legacyPackages.${system}; in
+        let
+          pkgs = nixpkgs.legacyPackages.${system};
+          craneLib = crane.mkLib pkgs;
+          # `spec.json` is include_str!'d, `assets/` is walked by build.rs and
+          # read again by the registry tests, and Cargo.toml names README.md.
+          # crane's default filter keeps only Cargo and Rust files, so all
+          # three are named here. Everything else — docs, CI, this flake — is
+          # excluded, so editing it does not rebuild the engine.
+          srcFilter = path: type:
+            (craneLib.filterCargoSources path type)
+            || (builtins.match ".*/spec\\.json$" path != null)
+            || (builtins.match ".*/assets(/.*)?$" path != null)
+            || (builtins.match ".*/README\\.md$" path != null);
+        in
         {
-          # The engine, with `spec.json` and the registry compiled in. It is
-          # one self-contained binary; `--assets` substitutes another registry.
-          default = pkgs.rustPlatform.buildRustPackage {
-            pname = spec.name;
-            version = manifest.package.version;
-            src = ./.;
-            cargoLock.lockFile = ./Cargo.lock;
-            doCheck = true;
+          # Dependencies build once, keyed on Cargo.toml and Cargo.lock, and
+          # are reused by every later build: a source change rebuilds only
+          # this crate. `doCheck` defaults to true, so `cargo test` runs in
+          # the check phase and `nix flake check` stays the behaviour suite's
+          # gate. pname and version come from Cargo.toml.
+          default = craneLib.buildPackage {
+            src = pkgs.lib.cleanSourceWith {
+              src = ./.;
+              filter = srcFilter;
+              name = "source";
+            };
             meta = {
               description = spec.name;
             };
