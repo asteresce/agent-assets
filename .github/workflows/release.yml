@@ -203,5 +203,12 @@ jobs:
             exit 1
           fi
 
+      # cargo publish is the one irreversible step here, and it is also the
+      # first thing that ever runs `cargo package`. A dry run catches a
+      # packaging failure before anything is uploaded, rather than after four
+      # platforms have built and the GitHub release is already public.
+      - name: The crate packages
+        run: cargo publish --dry-run
+
       - name: Publish
         run: cargo publish
