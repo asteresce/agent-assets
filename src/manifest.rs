@@ -115,9 +115,23 @@ pub fn store(path: &Path, manifest: &Manifest) -> Result<(), String> {
     install_file(path, json.as_bytes())
 }
 
-/// The hash of `bytes` as the manifest records it.
+/// The hash of `bytes` as the manifest records it: `sha256:` and 64 lowercase
+/// hex digits.
+///
+/// The hex is written byte by byte rather than formatted straight from the
+/// digest, because `{:x}` needs the digest type to implement `LowerHex` and
+/// sha2 0.11's `hybrid_array::Array` does not. The manifest's bytes are what
+/// separates a source change from a hand edit, so they must not move with the
+/// digest crate's API — the vectors in the tests below pin that.
 pub fn hash_bytes(bytes: &[u8]) -> String {
-    format!("sha256:{:x}", Sha256::digest(bytes))
+    use std::fmt::Write as _;
+
+    let digest = Sha256::digest(bytes);
+    let mut hex = String::with_capacity(64);
+    for byte in digest.as_slice() {
+        write!(hex, "{byte:02x}").expect("writing to a String cannot fail");
+    }
+    format!("sha256:{hex}")
 }
 
 #[cfg(test)]
