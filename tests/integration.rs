@@ -1392,6 +1392,29 @@ fn validate_never_modifies_the_project() {
     assert_eq!(world.read_project(".opencode/rules/security.md"), before);
 }
 
+/// The config is sound on its own; the file it aims at is not JSON. That is
+/// still a reason the run would stop, so `validate` says so before `sync`
+/// discovers it in the middle of writing.
+#[test]
+fn validate_reports_an_injection_target_that_is_not_json() {
+    let world = World::fixture();
+    world.write_project("opencode.json", "not json\n");
+
+    let run = world.run(&["validate"]);
+    run.fails();
+    assert!(run.stdout.contains("is not valid JSON"), "{}", run.stdout);
+}
+
+#[test]
+fn sync_refuses_a_bad_injection_target() {
+    let world = World::fixture();
+    world.write_project("opencode.json", "not json\n");
+
+    let run = world.sync();
+    run.fails();
+    assert!(run.stderr.contains("is not valid JSON"), "{}", run.stderr);
+}
+
 /// The pre-flight gates on config alone: every reason at once, on stderr,
 /// before anything is written. Registry problems do not stop a sync.
 #[test]

@@ -94,7 +94,7 @@ fn run() -> Result<u8, String> {
 
         Command::Validate => {
             let project = open_project(&args, &spec)?;
-            let problems = validate::validate(&project.config, &registry, &spec);
+            let problems = validate::validate(&project.config, &registry, &spec, &project.root);
             for problem in &problems {
                 println!("{problem}");
             }
@@ -150,7 +150,7 @@ fn open_project(args: &Cli, spec: &Spec) -> Result<Project, String> {
 /// malformed asset still syncs.
 fn open_valid_project(args: &Cli, spec: &Spec, registry: &Registry) -> Result<Project, String> {
     let project = open_project(args, spec)?;
-    let problems = validate::config_problems(&project.config, registry, spec);
+    let problems = validate::config_problems(&project.config, registry, spec, &project.root);
     if problems.is_empty() {
         Ok(project)
     } else {

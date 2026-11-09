@@ -256,11 +256,11 @@ root that nobody owns — yours, and never touched.
 
 ### Validation
 
-Before anything is written, every project command checks that the config can
-produce a well-defined run and refuses with **every** reason at once: an
-import that does not resolve, two imports fighting over one output path, an
-injection aimed at a file an asset owns. A config with four mistakes says all
-four, not one per run.
+Before anything is written, every project command checks the config and
+refuses with **every reason it is at fault**, all at once: an import that does
+not resolve, two imports fighting over one output path, an injection aimed at
+a file an asset owns, and an injection target that is unreadable or not JSON.
+A config with four mistakes says all four, not one per run.
 
 `validate` runs that check and also reports registry problems — any asset
 whose `##` sections depart from the schema its category declares in

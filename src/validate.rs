@@ -10,6 +10,8 @@
 //!   category declares? Reported, never a block: a malformed asset is a
 //!   quality problem in the registry, not in this project's config.
 
+use std::path::Path;
+
 use crate::config::Config;
 use crate::plan;
 use crate::registry::Registry;
@@ -17,12 +19,24 @@ use crate::sections;
 use crate::spec::Spec;
 
 /// Everything that would make a run undefined: imports that do not resolve,
-/// two imports fighting over a path, and injections aimed at a file an asset
-/// owns. Empty when the config is sound.
-pub fn config_problems(config: &Config, registry: &Registry, spec: &Spec) -> Vec<String> {
-    plan::resolve(config, registry, spec)
+/// two imports fighting over a path, injections aimed at a file an asset
+/// owns, and injection targets that cannot be read or parsed. Empty when the
+/// config is sound.
+pub fn config_problems(
+    config: &Config,
+    registry: &Registry,
+    spec: &Spec,
+    project_root: &Path,
+) -> Vec<String> {
+    let mut problems = plan::resolve(config, registry, spec)
         .err()
-        .unwrap_or_default()
+        .unwrap_or_default();
+    // A target that is not JSON would stop the run later, and the config is
+    // the thing that aimed at it, so it belongs here with the rest.
+    if let Err(errors) = plan::injection_targets(config, project_root) {
+        problems.extend(errors);
+    }
+    problems
 }
 
 /// Every asset in the registry that does not follow its category's declared
@@ -53,8 +67,13 @@ pub fn registry_problems(registry: &Registry, spec: &Spec) -> Vec<String> {
 }
 
 /// Both questions, config first, for `agent-assets validate`.
-pub fn validate(config: &Config, registry: &Registry, spec: &Spec) -> Vec<String> {
-    let mut problems = config_problems(config, registry, spec);
+pub fn validate(
+    config: &Config,
+    registry: &Registry,
+    spec: &Spec,
+    project_root: &Path,
+) -> Vec<String> {
+    let mut problems = config_problems(config, registry, spec, project_root);
     problems.extend(registry_problems(registry, spec));
     problems
 }
@@ -91,31 +110,31 @@ mod tests {
 
     #[test]
     fn a_sound_config_has_no_problems() {
-        let (_tmp, registry, spec) = fixture();
+        let (tmp, registry, spec) = fixture();
         let config = config_from(r#"{"rules": {"imports": ["security"]}}"#);
 
         assert_eq!(
-            config_problems(&config, &registry, &spec),
+            config_problems(&config, &registry, &spec, tmp.path()),
             Vec::<String>::new()
         );
     }
 
     #[test]
     fn an_empty_config_is_sound() {
-        let (_tmp, registry, spec) = fixture();
+        let (tmp, registry, spec) = fixture();
 
         assert_eq!(
-            config_problems(&config_from("{}"), &registry, &spec),
+            config_problems(&config_from("{}"), &registry, &spec, tmp.path()),
             Vec::<String>::new()
         );
     }
 
     #[test]
     fn an_unresolvable_import_is_reported_not_raised() {
-        let (_tmp, registry, spec) = fixture();
+        let (tmp, registry, spec) = fixture();
         let config = config_from(r#"{"rules": {"imports": ["no-such-asset"]}}"#);
 
-        let problems = config_problems(&config, &registry, &spec);
+        let problems = config_problems(&config, &registry, &spec, tmp.path());
         assert_eq!(problems.len(), 1, "{problems:?}");
         assert!(
             problems[0].contains("no-such-asset"),
@@ -126,10 +145,10 @@ mod tests {
 
     #[test]
     fn several_mistakes_are_all_reported_at_once() {
-        let (_tmp, registry, spec) = fixture();
+        let (tmp, registry, spec) = fixture();
         let config = config_from(r#"{"rules": {"imports": ["missing-one", "missing-two"]}}"#);
 
-        let problems = config_problems(&config, &registry, &spec);
+        let problems = config_problems(&config, &registry, &spec, tmp.path());
         assert_eq!(problems.len(), 2, "{problems:?}");
         assert!(problems[0].contains("missing-one"), "{problems:?}");
         assert!(problems[1].contains("missing-two"), "{problems:?}");
@@ -137,7 +156,7 @@ mod tests {
 
     #[test]
     fn an_injection_targeting_an_asset_is_a_config_problem() {
-        let (_tmp, registry, spec) = fixture();
+        let (tmp, registry, spec) = fixture();
         let config = config_from(
             r#"{
                 "rules": {
@@ -150,11 +169,38 @@ mod tests {
             }"#,
         );
 
-        let problems = config_problems(&config, &registry, &spec);
+        let problems = config_problems(&config, &registry, &spec, tmp.path());
         assert_eq!(problems.len(), 1, "{problems:?}");
         assert!(
             problems[0].contains("collides with the asset"),
             "{}",
+            problems[0]
+        );
+    }
+
+    /// The config is sound on its own; the file it aims at is the problem,
+    /// and that is still a reason the run would stop.
+    #[test]
+    fn an_injection_target_that_is_not_json_is_a_config_problem() {
+        let (tmp, registry, spec) = fixture();
+        fs::write(tmp.path().join("opencode.json"), "not json").unwrap();
+        let config = config_from(
+            r#"{
+                "rules": {
+                    "root": "./.opencode/rules",
+                    "imports": ["security"],
+                    "injections": {
+                        "json": [{ "file": "./opencode.json", "content": {"a": 1} }]
+                    }
+                }
+            }"#,
+        );
+
+        let problems = config_problems(&config, &registry, &spec, tmp.path());
+        assert_eq!(problems.len(), 1, "{problems:?}");
+        assert!(
+            problems[0].contains("is not valid JSON"),
+            "unexpected problem: {}",
             problems[0]
         );
     }
@@ -192,10 +238,10 @@ mod tests {
 
     #[test]
     fn validate_reports_both_kinds_of_problem() {
-        let (_tmp, registry, spec) = fixture();
+        let (tmp, registry, spec) = fixture();
         let config = config_from(r#"{"rules": {"imports": ["missing-thing"]}}"#);
 
-        let problems = validate(&config, &registry, &spec);
+        let problems = validate(&config, &registry, &spec, tmp.path());
         assert_eq!(problems.len(), 2, "{problems:?}");
         assert!(problems[0].contains("missing-thing"), "{problems:?}");
         assert!(problems[1].starts_with("rules/broken: "), "{problems:?}");

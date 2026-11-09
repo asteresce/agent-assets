@@ -235,15 +235,17 @@ and straight out otherwise so `show` still composes with a pipe.
 `validate` reports every problem with the config and the registry at once,
 rather than the first one each command would hit: an import that does not
 resolve, two imports fighting over one output path, an injection aimed at a
-file an asset owns, and any asset whose `##` sections depart from the schema
-its category declares under `headings` in `spec.json`. It prints one problem
-per line, exits 1 when it found any, and modifies nothing. It needs a project,
-because the config half needs one.
+file an asset owns, an injection target that is unreadable or not JSON, and
+any asset whose `##` sections depart from the schema its category declares
+under `headings` in `spec.json`. It prints one problem per line, exits 1 when
+it found any, and modifies nothing. It needs a project, because the config
+half needs one.
 
 The config half is also a pre-flight: `sync`, `check`, `status`, `render` and
-`show --rendered` refuse with every reason at once before writing anything.
-The registry half is never a gate — a malformed asset still syncs, because it
-is a quality problem in the registry rather than in this project's config.
+`show --rendered` refuse with every reason the config is at fault at once
+before writing anything. The registry half is never a gate — a malformed asset
+still syncs, because it is a quality problem in the registry rather than in
+this project's config.
 
 Output tokens: `check` prints `MISSING`, `DRIFT`, `EXTRA`, `ORPHAN`,
 `INJECT`, `CONFLICT`; `status` prints those plus `CLEAN`; `sync` prints

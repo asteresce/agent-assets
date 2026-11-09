@@ -509,6 +509,56 @@ fn classify(
     Ok(())
 }
 
+/// One JSON injection target: the file the config aims at, the content it
+/// wants there, and what is on disk now — `None` where the file does not
+/// exist yet, which `sync` creates.
+pub(crate) struct InjectionTarget {
+    path: PathBuf,
+    content: Value,
+    on_disk: Option<Value>,
+}
+
+/// Every JSON injection target, read from disk in config order.
+///
+/// Targets that cannot be read or parsed are collected and returned as
+/// errors rather than raised: a config aiming at several broken files should
+/// say so at once, not one per run. A missing file is not an error — `sync`
+/// writes it.
+pub(crate) fn injection_targets(
+    config: &Config,
+    project_root: &Path,
+) -> Result<Vec<InjectionTarget>, Vec<String>> {
+    let mut targets = Vec::new();
+    let mut errors: Vec<String> = Vec::new();
+    for (path, content) in combine_injections(config) {
+        let absolute = project_root.join(&path);
+        let on_disk = match std::fs::read_to_string(&absolute) {
+            Ok(text) => match serde_json::from_str::<Value>(&text) {
+                Ok(value) => Some(value),
+                Err(e) => {
+                    errors.push(format!("{} is not valid JSON: {e}", path.display()));
+                    continue;
+                }
+            },
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+            Err(e) => {
+                errors.push(format!("cannot read {}: {e}", path.display()));
+                continue;
+            }
+        };
+        targets.push(InjectionTarget {
+            path,
+            content,
+            on_disk,
+        });
+    }
+    if errors.is_empty() {
+        Ok(targets)
+    } else {
+        Err(errors)
+    }
+}
+
 /// What the JSON injections need from the project.
 fn plan_injections(
     config: &Config,
@@ -523,18 +573,14 @@ fn plan_injections(
         return Err(collisions.join("\n"));
     }
 
-    for (target, content) in combine_injections(config) {
-        guard_ancestors(project_root, &target, &BTreeSet::new())?;
-
-        let absolute = project_root.join(&target);
-        let on_disk = match std::fs::read_to_string(&absolute) {
-            Ok(text) => Some(
-                serde_json::from_str::<Value>(&text)
-                    .map_err(|e| format!("{} is not valid JSON: {e}", target.display()))?,
-            ),
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
-            Err(e) => return Err(format!("cannot read {}: {e}", target.display())),
-        };
+    let targets = injection_targets(config, project_root).map_err(|errors| errors.join("\n"))?;
+    for target in targets {
+        let InjectionTarget {
+            path,
+            content,
+            on_disk,
+        } = target;
+        guard_ancestors(project_root, &path, &BTreeSet::new())?;
 
         let needs_work = match &on_disk {
             Some(existing) => !merge::is_noop(existing, &content),
@@ -545,10 +591,10 @@ fn plan_injections(
                 .map(|existing| merge::merge(&existing, &content))
                 .unwrap_or(content);
             actions.push(Action::MergeJson {
-                path: target.clone(),
+                path: path.clone(),
                 content: merged,
             });
-            problems.push(Problem::new(Status::Inject, target, None));
+            problems.push(Problem::new(Status::Inject, path, None));
         }
     }
 
