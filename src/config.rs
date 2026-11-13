@@ -13,7 +13,7 @@ use serde::de::{Error as DeError, MapAccess, Visitor};
 use serde::{Deserialize, Deserializer};
 use serde_json::Value;
 
-use crate::spec::Spec;
+use crate::defaults::Defaults;
 
 // ----------------------------------------------------------------- names
 
@@ -208,11 +208,11 @@ impl<'de> Deserialize<'de> for Category {
 
 impl Category {
     /// The effective output root for `category`, honouring `defaults.rootPrefix`.
-    pub fn effective_root(&self, category: &Name, spec: &Spec) -> Result<RelPath, String> {
+    pub fn effective_root(&self, category: &Name, defaults: &Defaults) -> Result<RelPath, String> {
         match &self.root {
             Some(root) => Ok(root.clone()),
             None => {
-                let joined = Path::new(&spec.defaults.root_prefix).join(category.as_str());
+                let joined = Path::new(&defaults.root_prefix).join(category.as_str());
                 RelPath::new(&joined.to_string_lossy())
             }
         }
@@ -537,9 +537,11 @@ mod tests {
 
     #[test]
     fn the_default_root_is_the_declared_prefix_plus_the_category() {
-        let spec = Spec::parse().unwrap();
+        let defaults = Defaults::parse().unwrap();
         let name = Name::try_from("rules".to_string()).unwrap();
-        let root = Category::default().effective_root(&name, &spec).unwrap();
+        let root = Category::default()
+            .effective_root(&name, &defaults)
+            .unwrap();
         assert_eq!(
             root.as_path()
                 .file_name()
@@ -548,7 +550,7 @@ mod tests {
         );
         assert!(
             root.as_str()
-                .starts_with(&normalise_relpath(&spec.defaults.root_prefix)),
+                .starts_with(&normalise_relpath(&defaults.root_prefix)),
             "root {} should sit under the declared prefix",
             root
         );
@@ -556,11 +558,14 @@ mod tests {
 
     #[test]
     fn an_explicit_root_wins_over_the_default() {
-        let spec = Spec::parse().unwrap();
+        let defaults = Defaults::parse().unwrap();
         let category = ok(r#"{"rules": {"root": "./r"}}"#);
         let category = category.get("rules").unwrap();
         let name = Name::try_from("rules".to_string()).unwrap();
-        assert_eq!(category.effective_root(&name, &spec).unwrap().as_str(), "r");
+        assert_eq!(
+            category.effective_root(&name, &defaults).unwrap().as_str(),
+            "r"
+        );
     }
 
     #[test]

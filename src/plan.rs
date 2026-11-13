@@ -12,13 +12,13 @@ use std::path::{Path, PathBuf};
 use serde_json::Value;
 
 use crate::config::Config;
+use crate::defaults::Defaults;
 use crate::files::{self, guard_ancestors};
 use crate::manifest::{self, Manifest, hash_bytes};
 use crate::merge;
 use crate::registry::{AssetKind, Registry};
 use crate::render::{self, Rendered};
 use crate::report::{Origin, Status};
-use crate::spec::Spec;
 
 // --------------------------------------------------------------- outputs
 
@@ -135,11 +135,11 @@ struct Outcome {
 pub fn plan(
     config: &Config,
     registry: &Registry,
-    spec: &Spec,
+    defaults: &Defaults,
     manifest: Option<&Manifest>,
     project_root: &Path,
 ) -> Result<Plan, String> {
-    let resolved = resolve(config, registry, spec).map_err(|errors| errors.join("\n"))?;
+    let resolved = resolve(config, registry, defaults).map_err(|errors| errors.join("\n"))?;
 
     // Nothing the plan touches may be reached through a symlinked directory:
     // the write would land outside the project. Directory asset roots are
@@ -265,7 +265,7 @@ pub fn plan(
     actions.extend(removes);
 
     // Nobody owns these, so nobody touches them; `status` only counts them.
-    let custom = custom_files(project_root, config, spec, &resolved, manifest)?;
+    let custom = custom_files(project_root, config, defaults, &resolved, manifest)?;
 
     // In `tree` order, so `states` and `tree` walk together.
     states.sort_by(|a, b| a.path.cmp(&b.path));
@@ -287,10 +287,10 @@ pub fn plan(
 pub fn expected_tree(
     config: &Config,
     registry: &Registry,
-    spec: &Spec,
+    defaults: &Defaults,
 ) -> Result<Vec<(PathBuf, Vec<u8>)>, String> {
     Ok(tree_of(
-        &resolve(config, registry, spec).map_err(|errors| errors.join("\n"))?,
+        &resolve(config, registry, defaults).map_err(|errors| errors.join("\n"))?,
     ))
 }
 
@@ -303,11 +303,11 @@ pub fn expected_tree(
 pub fn renders_for(
     config: &Config,
     registry: &Registry,
-    spec: &Spec,
+    defaults: &Defaults,
     category: &str,
     name: &str,
 ) -> Result<Vec<(PathBuf, Vec<u8>)>, String> {
-    Ok(resolve(config, registry, spec)
+    Ok(resolve(config, registry, defaults)
         .map_err(|errors| errors.join("\n"))?
         .iter()
         .filter(|asset| asset.origin.category == category && asset.origin.name == name)
@@ -331,13 +331,13 @@ pub(crate) struct Resolved {
 pub(crate) fn resolve(
     config: &Config,
     registry: &Registry,
-    spec: &Spec,
+    defaults: &Defaults,
 ) -> Result<Vec<Resolved>, Vec<String>> {
     let mut resolved: Vec<Resolved> = Vec::new();
     let mut errors: Vec<String> = Vec::new();
 
     for (category_name, category) in &config.0 {
-        let root = match category.effective_root(category_name, spec) {
+        let root = match category.effective_root(category_name, defaults) {
             Ok(root) => root,
             Err(e) => {
                 errors.push(e);
@@ -719,7 +719,7 @@ fn collect_strays(
 fn custom_files(
     project_root: &Path,
     config: &Config,
-    spec: &Spec,
+    defaults: &Defaults,
     resolved: &[Resolved],
     previous: Option<&Manifest>,
 ) -> Result<Vec<PathBuf>, String> {
@@ -737,7 +737,7 @@ fn custom_files(
     for (category, entry) in &config.0 {
         roots.push(
             entry
-                .effective_root(category, spec)?
+                .effective_root(category, defaults)?
                 .as_path()
                 .to_path_buf(),
         );
@@ -792,8 +792,8 @@ fn manifest_of(resolved: &[Resolved]) -> Manifest {
 mod tests {
     use super::*;
     use crate::config;
+    use crate::defaults::Defaults;
     use crate::report::Status;
-    use crate::spec::Spec;
     use std::fs;
     use tempfile::TempDir;
 
@@ -805,7 +805,7 @@ mod tests {
         _tmp: TempDir,
         registry: Registry,
         project: PathBuf,
-        spec: Spec,
+        defaults: Defaults,
     }
 
     fn world() -> World {
@@ -813,6 +813,11 @@ mod tests {
         let assets = tmp.path().join("assets");
         fs::create_dir_all(assets.join("rules")).unwrap();
         fs::create_dir_all(assets.join("skills/tdd")).unwrap();
+        fs::write(
+            assets.join("spec.json"),
+            include_str!("../assets/spec.json"),
+        )
+        .unwrap();
         fs::write(assets.join("rules/security.md"), RULE).unwrap();
         fs::write(assets.join("skills/tdd/SKILL.md"), "## Description\n\nD.\n").unwrap();
         fs::write(assets.join("skills/tdd/checklist.md"), "- a\n").unwrap();
@@ -822,9 +827,9 @@ mod tests {
 
         World {
             _tmp: tmp,
-            registry: Registry::with_defaults(assets, &Spec::parse().unwrap()),
+            registry: Registry::new(assets).unwrap(),
             project,
-            spec: Spec::parse().unwrap(),
+            defaults: Defaults::parse().unwrap(),
         }
     }
 
@@ -833,7 +838,7 @@ mod tests {
         plan(
             &config,
             &world.registry,
-            &world.spec,
+            &world.defaults,
             manifest,
             &world.project,
         )
@@ -1108,7 +1113,14 @@ mod tests {
             }
         }"#;
         let config = config::parse(bad).unwrap();
-        let error = plan(&config, &world.registry, &world.spec, None, &world.project).unwrap_err();
+        let error = plan(
+            &config,
+            &world.registry,
+            &world.defaults,
+            None,
+            &world.project,
+        )
+        .unwrap_err();
         assert!(error.contains("collides with the asset"), "{error}");
     }
 
@@ -1127,7 +1139,14 @@ mod tests {
             }
         }"#;
         let config = config::parse(bad).unwrap();
-        let error = plan(&config, &world.registry, &world.spec, None, &world.project).unwrap_err();
+        let error = plan(
+            &config,
+            &world.registry,
+            &world.defaults,
+            None,
+            &world.project,
+        )
+        .unwrap_err();
         assert!(error.contains("same output path"), "{error}");
     }
 
@@ -1218,7 +1237,7 @@ mod tests {
         match plan(
             &config,
             &world.registry,
-            &world.spec,
+            &world.defaults,
             manifest,
             &world.project,
         ) {

@@ -8,7 +8,7 @@ artifacts it needs, referenced in a config by its directory name.
 `agent-assets list` names what is here.
 
 The sections a skill's entry file may carry are declared in
-[`spec.json`](../../spec.json) under `headings.skills`. Artifacts are
-free-form.
+[`spec.json`](../spec.json) under `skills.headings`; the entry file's name is
+`skills.entryFile`. Artifacts are free-form.
 
 Add a directory here and it is importable; nothing else needs updating.

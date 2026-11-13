@@ -9,8 +9,10 @@ self:
 { lib, config, ... }:
 
 let
-  # One declaration for every default and label; see spec.json.
-  spec = builtins.fromJSON (builtins.readFile ./spec.json);
+  # One declaration for every default; see defaults.json. The package name
+  # comes from Cargo.toml, its authority, so no value is declared twice.
+  defaults = builtins.fromJSON (builtins.readFile ./defaults.json);
+  cargoToml = builtins.fromTOML (builtins.readFile ./Cargo.toml);
 
   cfg = config.agentAssets;
   isActive = cfg.enable && cfg.config != { };
@@ -20,11 +22,11 @@ let
       configJson =
         if builtins.isPath cfg.config
         then "${cfg.config}"
-        else "${pkgs.writeText (builtins.baseNameOf spec.defaults.config) (builtins.toJSON cfg.config)}";
+        else "${pkgs.writeText (builtins.baseNameOf defaults.config) (builtins.toJSON cfg.config)}";
       package = self.packages.${pkgs.system}.default;
     in
-    "${pkgs.writeShellScript "${spec.name}-${name}" ''
-      exec ${package}/bin/${spec.name} ${name} \
+    "${pkgs.writeShellScript "${cargoToml.package.name}-${name}" ''
+      exec ${package}/bin/${cargoToml.package.name} ${name} \
         --config ${lib.escapeShellArg configJson} \
         --manifest ${lib.escapeShellArg cfg.manifest} \
         --project "''${PROJECT_ROOT:-$PWD}" \
@@ -52,11 +54,11 @@ in
 
     manifest = lib.mkOption {
       type = lib.types.str;
-      default = spec.defaults.manifest;
+      default = defaults.manifest;
       description = ''
         Path to the ownership manifest, relative to the project root.
         Sync writes it, check reads it. Defaults to
-        `${spec.defaults.manifest}`, the engine's own default.
+        `${defaults.manifest}`, the engine's own default.
       '';
     };
   };

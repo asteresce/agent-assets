@@ -12,18 +12,18 @@ use std::process::ExitCode;
 
 use agent_assets::cli::{self, Cli, Command};
 use agent_assets::config::{Config, RelPath};
+use agent_assets::defaults::Defaults;
 use agent_assets::manifest::{self, Manifest};
 use agent_assets::plan;
 use agent_assets::registry::{Asset, AssetKind, Registry};
 use agent_assets::report::{self, Reporter, Status};
-use agent_assets::spec::Spec;
 use agent_assets::validate;
 
 fn main() -> ExitCode {
     match run() {
         Ok(code) => ExitCode::from(code),
         Err(message) => {
-            eprintln!("agent-assets: error: {message}");
+            eprintln!("{}: error: {message}", env!("CARGO_PKG_NAME"));
             ExitCode::FAILURE
         }
     }
@@ -44,11 +44,11 @@ fn run() -> Result<u8, String> {
     if args.common.force && !matches!(args.command, Command::Sync) {
         return Err("--force only applies to sync".to_string());
     }
-    let spec = Spec::parse()?;
+    let defaults = Defaults::parse()?;
 
     let registry = match &args.common.assets {
-        Some(root) => Registry::with_defaults(root.clone(), &spec),
-        None => Registry::embedded_with_defaults(&spec),
+        Some(root) => Registry::new(root.clone())?,
+        None => Registry::embedded()?,
     };
     let reporter = Reporter::new(args.common.color);
 
@@ -59,21 +59,21 @@ fn run() -> Result<u8, String> {
             // The rendered form depends on the project's injections, so only
             // `--rendered` needs one. The bare form reads the registry alone.
             let project = if *rendered {
-                Some(open_valid_project(&args, &spec, &registry)?)
+                Some(open_valid_project(&args, &defaults, &registry)?)
             } else {
                 None
             };
-            show(&registry, &spec, target, project.as_ref())
+            show(&registry, &defaults, target, project.as_ref())
         }
 
         Command::Render { out } => {
-            let project = open_valid_project(&args, &spec, &registry)?;
-            render(&project.config, &registry, &spec, out)
+            let project = open_valid_project(&args, &defaults, &registry)?;
+            render(&project.config, &registry, &defaults, out)
         }
 
         Command::Check => {
-            let project = open_valid_project(&args, &spec, &registry)?;
-            let plan = plan_of(&project, &registry, &spec)?;
+            let project = open_valid_project(&args, &defaults, &registry)?;
+            let plan = plan_of(&project, &registry, &defaults)?;
             let lines = agent_assets::check::run(&plan);
             for line in &lines {
                 reporter.print(line);
@@ -83,8 +83,8 @@ fn run() -> Result<u8, String> {
         }
 
         Command::Status => {
-            let project = open_valid_project(&args, &spec, &registry)?;
-            let plan = plan_of(&project, &registry, &spec)?;
+            let project = open_valid_project(&args, &defaults, &registry)?;
+            let plan = plan_of(&project, &registry, &defaults)?;
             for line in &agent_assets::check::status(&plan) {
                 reporter.print(line);
             }
@@ -93,8 +93,8 @@ fn run() -> Result<u8, String> {
         }
 
         Command::Validate => {
-            let project = open_project(&args, &spec)?;
-            let problems = validate::validate(&project.config, &registry, &spec, &project.root);
+            let project = open_project(&args, &defaults)?;
+            let problems = validate::validate(&project.config, &registry, &defaults, &project.root);
             for problem in &problems {
                 println!("{problem}");
             }
@@ -102,12 +102,12 @@ fn run() -> Result<u8, String> {
         }
 
         Command::Sync => {
-            let project = open_valid_project(&args, &spec, &registry)?;
+            let project = open_valid_project(&args, &defaults, &registry)?;
             let previous = load_manifest(&project.manifest)?;
             let plan = plan::plan(
                 &project.config,
                 &registry,
-                &spec,
+                &defaults,
                 previous.as_ref(),
                 &project.root,
             )?;
@@ -129,11 +129,11 @@ fn run() -> Result<u8, String> {
     }
 }
 
-fn open_project(args: &Cli, spec: &Spec) -> Result<Project, String> {
-    let root = cli::resolve_project_root(args, spec)?;
-    let config_path = cli::resolve_config_path(args, spec, &root)?;
+fn open_project(args: &Cli, defaults: &Defaults) -> Result<Project, String> {
+    let root = cli::resolve_project_root(args, defaults)?;
+    let config_path = cli::resolve_config_path(args, defaults, &root)?;
     let config = Config::read(&config_path)?;
-    let manifest = root.join(resolve_manifest(args, spec)?.as_path());
+    let manifest = root.join(resolve_manifest(args, defaults)?.as_path());
     Ok(Project {
         root,
         config,
@@ -148,9 +148,13 @@ fn open_project(args: &Cli, spec: &Spec) -> Result<Project, String> {
 /// asset owns — is refused here with every reason at once, before anything is
 /// written. Registry problems are not a gate: `validate` reports those, and a
 /// malformed asset still syncs.
-fn open_valid_project(args: &Cli, spec: &Spec, registry: &Registry) -> Result<Project, String> {
-    let project = open_project(args, spec)?;
-    let problems = validate::config_problems(&project.config, registry, spec, &project.root);
+fn open_valid_project(
+    args: &Cli,
+    defaults: &Defaults,
+    registry: &Registry,
+) -> Result<Project, String> {
+    let project = open_project(args, defaults)?;
+    let problems = validate::config_problems(&project.config, registry, defaults, &project.root);
     if problems.is_empty() {
         Ok(project)
     } else {
@@ -158,12 +162,16 @@ fn open_valid_project(args: &Cli, spec: &Spec, registry: &Registry) -> Result<Pr
     }
 }
 
-fn plan_of(project: &Project, registry: &Registry, spec: &Spec) -> Result<plan::Plan, String> {
+fn plan_of(
+    project: &Project,
+    registry: &Registry,
+    defaults: &Defaults,
+) -> Result<plan::Plan, String> {
     let previous = load_manifest(&project.manifest)?;
     plan::plan(
         &project.config,
         registry,
-        spec,
+        defaults,
         previous.as_ref(),
         &project.root,
     )
@@ -176,7 +184,10 @@ fn load_manifest(path: &Path) -> Result<Option<Manifest>, String> {
     match manifest::load(path) {
         Ok(manifest) => Ok(manifest),
         Err(message) => {
-            eprintln!("agent-assets: warning: {message}; skipping orphan removal");
+            eprintln!(
+                "{}: warning: {message}; skipping orphan removal",
+                env!("CARGO_PKG_NAME")
+            );
             Ok(None)
         }
     }
@@ -184,8 +195,13 @@ fn load_manifest(path: &Path) -> Result<Option<Manifest>, String> {
 
 /// `render` writes the expected tree and touches nothing else: no manifest,
 /// no JSON injections, no project.
-fn render(config: &Config, registry: &Registry, spec: &Spec, out: &Path) -> Result<u8, String> {
-    for (path, bytes) in plan::expected_tree(config, registry, spec)? {
+fn render(
+    config: &Config,
+    registry: &Registry,
+    defaults: &Defaults,
+    out: &Path,
+) -> Result<u8, String> {
+    for (path, bytes) in plan::expected_tree(config, registry, defaults)? {
         let target = out.join(&path);
         let parent = target
             .parent()
@@ -199,10 +215,10 @@ fn render(config: &Config, registry: &Registry, spec: &Spec, out: &Path) -> Resu
     Ok(0)
 }
 
-fn resolve_manifest(args: &Cli, spec: &Spec) -> Result<RelPath, String> {
+fn resolve_manifest(args: &Cli, defaults: &Defaults) -> Result<RelPath, String> {
     match &args.common.manifest {
         Some(path) => RelPath::new(&path.to_string_lossy()),
-        None => RelPath::new(&spec.defaults.manifest),
+        None => RelPath::new(&defaults.manifest),
     }
 }
 
@@ -252,7 +268,7 @@ fn list(registry: &Registry) -> Result<u8, String> {
 /// `show` prints one asset: its source, or the files `sync` would write for it.
 fn show(
     registry: &Registry,
-    spec: &Spec,
+    defaults: &Defaults,
     target: &str,
     project: Option<&Project>,
 ) -> Result<u8, String> {
@@ -265,7 +281,7 @@ fn show(
         // placement, the frontmatter and the refusals are `sync`'s own
         // answers rather than a second implementation of them.
         Some(project) => {
-            let files = plan::renders_for(&project.config, registry, spec, category, name)?;
+            let files = plan::renders_for(&project.config, registry, defaults, category, name)?;
             if files.is_empty() {
                 return Err(format!(
                     "{target} is not imported; nothing would be written"

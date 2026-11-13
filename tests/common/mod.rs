@@ -11,9 +11,9 @@ use assert_cmd::cargo::CommandCargoExt;
 use serde_json::{Value, json};
 use tempfile::TempDir;
 
-// The fixture assets. The section schemas these satisfy are checked by
-// `tests/registry.rs` against the shipped registry; here the names are just
-// names.
+// The fixture assets. The fixture registry carries the shipped
+// `assets/spec.json`, so `validate` checks these against the real schemas;
+// `tests/registry.rs` is what conforms the shipped assets themselves.
 pub const SECURITY: &str = "## Summary\n\nKeep secrets safe.\n";
 pub const CODE_STYLE: &str = "## Summary\n\nPrefer clarity.\n";
 pub const SKILL_MD: &str = "## Description\n\nTest first.\n";
@@ -70,13 +70,19 @@ impl Run {
 }
 
 impl World {
-    /// An empty registry and an empty config.
+    /// An empty registry and an empty config. The registry carries the
+    /// shipped declaration, which every registry directory must.
     pub fn new() -> World {
         let tmp = TempDir::new().expect("temp dir");
         let registry = tmp.path().join("registry");
         let project = tmp.path().join("project");
         std::fs::create_dir_all(&registry).unwrap();
         std::fs::create_dir_all(&project).unwrap();
+        std::fs::write(
+            registry.join("spec.json"),
+            include_str!("../../assets/spec.json"),
+        )
+        .unwrap();
         World {
             tmp,
             registry,
@@ -243,6 +249,6 @@ pub fn skill(relative_dir: &str) -> String {
 
 /// The default output root, read from the declaration rather than restated.
 pub fn default_root() -> String {
-    let spec = agent_assets::spec::Spec::parse().expect("spec");
-    agent_assets::config::normalise_relpath(&spec.defaults.root_prefix)
+    let defaults = agent_assets::defaults::Defaults::parse().expect("defaults");
+    agent_assets::config::normalise_relpath(&defaults.root_prefix)
 }

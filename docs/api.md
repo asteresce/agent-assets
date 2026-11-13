@@ -1,11 +1,12 @@
 # Reference
 
 Behavioural semantics — ownership, orphans, drift, conflicts, idempotence —
-are described once, in [README — How it behaves](../README.md#how-it-behaves).
+are described once in [README — How it behaves](../README.md#how-it-behaves).
 This page is the data and interface reference: what the keys and flags *mean*.
-The values are not stated here: [`spec.json`](../spec.json) is the declared
-source for the name, the defaults and the per-category section schemas, and
-this page refers to those keys instead of repeating them.
+The values are not stated here: [`defaults.json`](../defaults.json) is the
+declared source for the defaults, and the registry's own
+[`spec.json`](../assets/spec.json) for its categories' shapes and section
+schemas; this page refers to those keys instead of repeating them.
 
 ## Config
 
@@ -39,7 +40,7 @@ describes where that category's assets are emitted.
 }
 ```
 
-Category names are not a fixed set — see [Format inference](#format-inference).
+Category names are not a fixed set — see [Declared shapes](#declared-shapes).
 Unknown keys are rejected anywhere in the document, and every error names the
 JSON path it is about: `rules.imports[1].rename: …`.
 
@@ -62,23 +63,27 @@ Either a string (shorthand for `{ "name": "<string>" }`) or an object:
 | `destination` | string | `""` | subdirectory of `root`; `..` is rejected |
 | `injections` | object | `{}` | per-import transformations |
 
-### Format inference
+### Declared shapes
 
-For each import the engine looks for `<category>/<name>.md` and then for
-`<category>/<name>/` in `--assets`:
+The registry carries its own [`spec.json`](../assets/spec.json): one entry
+per category, declaring `kind` and the section schema its assets follow.
+For each import the engine looks up the category's declaration, then the
+source it names in `--assets` (or the registry compiled into the binary):
 
-- `<name>.md` found — a **file asset**, emitted to
+- `kind: "file"` — a **file asset** at `<category>/<name>.<extension>`,
+  where `extension` is the category's declared suffix, emitted to
   `<root>/<destination>/<rename>.md`.
-- `<name>/` found — a **directory asset** (a skill), emitted to
+- `kind: "dir"` — a **directory asset** at `<category>/<name>/`, emitted to
   `<root>/<destination>/<rename>/`. Every file in the source is copied;
-  `defaults.skillEntry` is the entry file and is the one that receives
-  frontmatter, the rest are artifacts and are copied verbatim.
-- neither — the run fails naming both paths it tried.
+  `entryFile` is the entry file and is the one that receives frontmatter,
+  the rest are artifacts and are copied verbatim.
+- neither — the run fails naming the path it tried.
 
-A source that is both is an error, so a typo fails loudly instead of
-silently picking one shape. The directory is a skill directory; its entry
-file (`defaults.skillEntry`) is the one stated format convention of the
-registry.
+The declaration decides, not the layout: a file in a directory category, or
+a directory in a file category, is not an asset — `list` and `sync` skip it
+and `validate` reports it. A registry directory must carry its `spec.json`;
+one that does not, or whose categories the config names without a
+declaration, is refused.
 
 ## Injections
 
@@ -210,7 +215,7 @@ agent-assets show <category>/<name> [--rendered]
 | Flag | Meaning |
 |---|---|
 | `--config FILE` | config path (default `defaults.config`) |
-| `--assets DIR` | asset registry root (default: the registry compiled into the binary) |
+| `--assets DIR` | asset registry root; must carry its `spec.json` (default: the registry compiled into the binary) |
 | `--project DIR` | project root to reconcile (default `defaults.project`) |
 | `--manifest PATH` | manifest, relative to `--project` (default `defaults.manifest`) |
 | `--out DIR` | destination tree (`render` only) |
@@ -236,8 +241,9 @@ and straight out otherwise so `show` still composes with a pipe.
 rather than the first one each command would hit: an import that does not
 resolve, two imports fighting over one output path, an injection aimed at a
 file an asset owns, an injection target that is unreadable or not JSON, and
-any asset whose `##` sections depart from the schema its category declares
-under `headings` in `spec.json`. It prints one problem per line, exits 1 when
+any departure from the registry's own `spec.json` — an undeclared category,
+a shape the category does not declare, or `##` sections that depart from the
+schema it declares. It prints one problem per line, exits 1 when
 it found any, and modifies nothing. It needs a project, because the config
 half needs one.
 

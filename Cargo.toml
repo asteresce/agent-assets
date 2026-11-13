@@ -14,7 +14,7 @@ keywords = ["agent", "assets", "sync", "cli", "markdown"]
 categories = ["command-line-utilities", "development-tools"]
 # What crates.io gets. Everything else in the tree — AGENTS.md, the flake,
 # .github, opencode.json, deny.toml — is this repository's own machinery.
-# docs/ and spec.json are included because README links to them; assets/ and
+# docs/ and defaults.json are included because README links to them; assets/ and
 # build.rs because the binary cannot exist without them.
 include = [
     "/build.rs",
@@ -22,7 +22,7 @@ include = [
     "/tests/**",
     "/assets/**",
     "/docs/**",
-    "/spec.json",
+    "/defaults.json",
     "/README.md",
     "/LICENSE",
 ]
@@ -45,6 +45,11 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 serde_path_to_error = "0.1"
 sha2 = "0.11"
+
+# build.rs reads assets/spec.json to know what to embed.
+[build-dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 
 [dev-dependencies]
 assert_cmd = "2"

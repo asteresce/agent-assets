@@ -7,6 +7,6 @@ Each agent is a Markdown file, referenced in a config by its name without the
 `.md` extension. `agent-assets list` names what is here.
 
 The sections an agent prompt may carry are declared in
-[`spec.json`](../../spec.json) under `headings.agents`.
+[`spec.json`](../spec.json) under `agents.headings`.
 
 Add a file here and it is importable; nothing else needs updating.

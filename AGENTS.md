@@ -6,9 +6,10 @@ an agent is, and how it discovers files, is the consumer's business.
 
 ## Terminology
 
-- **Assets** — `assets/`, the shared asset sources; one directory per category.
-- **Category** — one directory under the assets root (and one top-level config
-  key).
+- **Assets** — `assets/`, the shared asset sources: its `spec.json` plus one
+  directory per category.
+- **Category** — one directory under the assets root (declared in the
+  registry's `spec.json`, and one top-level config key).
 - **Import** — one config entry selecting an asset to emit.
 - **Injection** — a data-driven transform applied at emit time
   (`frontmatter`, `json`).
@@ -16,30 +17,40 @@ an agent is, and how it discovers files, is the consumer's business.
 
 ## Declared values
 
-`spec.json` is the single source of truth for the package name, the defaults
-and the per-category section schema. The engine, the flake module and the
-tests all read it — never restate a value from it in code or in
-behaviour-bearing prose (option tables, flag defaults, CLI text); refer to
-the key instead (`defaults.manifest`, `defaults.skillEntry`, …). A snapshot
-of this repository's layout may name the directories; the reference stays the
+Two declarations, each read and never restated:
+
+- `defaults.json` — the defaults; the file *is* the object, one level deep.
+- `assets/spec.json` — the registry's categories: their shape (`kind`, plus
+  `extension` for a file category or `entryFile` for a directory one) and
+  their section schema.
+
+The package's identity — name, description, version — is `Cargo.toml`'s
+(`env!` in the engine, `builtins.fromTOML` in the flakes): no declaration
+here duplicates it.
+
+The engine, `build.rs`, the flake module and the tests all read them — never
+restate a value from them in code or in behaviour-bearing prose (option
+tables, flag defaults, CLI text); refer to the key instead
+(`defaults.manifest`, `assets/spec.json`'s `skills.entryFile`, …). A snapshot
+of this repository's layout may name the directories; the references stay the
 authority for the values.
 
-Documentation links to `spec.json` rather than restating values from it. The
-behavioural spec is one place — the "How it behaves" section of `README.md` —
-and the tests are its executable form.
+Documentation links to the declarations rather than restating values from
+them. The behavioural spec is one place — the "How it behaves" section of
+`README.md` — and the tests are its executable form.
 
 ## Adding an asset
 
-1. Drop it in the registry (`defaults.assets`): `rules/<name>.md`,
-   `agents/<name>.md`, or `skills/<name>/` with its entry file
-   (`defaults.skillEntry`) plus artifacts.
+1. Drop it in the registry, in the shape its category declares:
+   `rules/<name>.md`, `agents/<name>.md`, or `skills/<name>/` with
+   its entry file (`assets/spec.json`'s `skills.entryFile`) plus artifacts.
 2. Keep the content provider-neutral: no frontmatter, no agent names, no
    references to where files land. All of that is injected by consumers.
-3. Use only the `##` sections `spec.json` declares for the category, in the
-   order it declares them. Required sections must be present and non-empty;
-   optional ones may be omitted. `cargo test` (and therefore `nix flake
-   check`) enforces all of this and rejects, for the asset (entry file, for a
-   skill):
+3. Use only the `##` sections `assets/spec.json` declares for the category,
+   in the order it declares them. Required sections must be present and
+   non-empty; optional ones may be omitted. `cargo test` (and therefore
+   `nix flake check`) enforces all of this and rejects, for the asset
+   (entry file, for a directory asset):
    - an unknown, repeated or out-of-order `##` section;
    - an h1 title, frontmatter, or any text before the first `##`;
    - an empty section (a subheading alone is not content).
@@ -48,23 +59,24 @@ and the tests are its executable form.
    config, alongside the config problems that would make a run undefined.
 
    Subheadings (`###` and below) are free. Fenced code blocks are opaque, so
-   an example may contain headings of its own. Artifacts in a skill directory
+   an example may contain headings of its own. Artifacts in a directory asset
    are free-form.
 
 The category `README.md`s describe what a category is for and how its assets
 are referenced. The listing itself is `agent-assets list`'s job, so there is
 no catalog to keep in step.
 
-Changing the section vocabulary is a `spec.json` change: keep a heading's name
-and meaning the same across categories, never rename one in place (existing
-assets would break — add the new name, migrate, then remove the old). Then
-regenerate nothing: the catalog is a listing. Headings that only one agent
-understands (tool lists, model names, permissions) are provider-specific and
-belong in consumer frontmatter, not in an asset.
+Changing the section vocabulary is an `assets/spec.json` change: keep a
+heading's name and meaning the same across categories, never rename one in
+place (existing assets would break — add the new name, migrate, then remove
+the old). Then regenerate nothing: the catalog is a listing. Headings that
+only one agent understands (tool lists, model names, permissions) are
+provider-specific and belong in consumer frontmatter, not in an asset.
 
-Adding a **category** is a new registry directory, its section schema in
-`spec.json`, and the matching config key in consumers — the engine infers
-file-vs-directory from the source layout and has no category list to edit.
+Adding a **category** is a new registry directory, an entry in the
+registry's `spec.json` giving its shape and section schema, and the matching
+config key in consumers — the declaration, not the layout, decides what
+shape the category's assets have.
 
 ## Changing the engine
 

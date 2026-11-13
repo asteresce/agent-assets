@@ -8,8 +8,8 @@ puts them into a project tree: declarative, idempotent, and checkable in CI.
 - `agent-assets` — one self-contained binary with `sync`, `check`, `validate`,
   `render`, `status`, `list` and `show`. The registry of shared assets is
   compiled into it, so it runs anywhere with nothing installed beside it.
-- `assets/` — that registry's source, one directory per category (`rules/`,
-  `skills/`, `agents/`).
+- `assets/` — that registry's source: its `spec.json` and one directory per
+  category (`rules/`, `skills/`, `agents/`).
 - A flake-parts module wiring `nix run .#sync`, `nix run .#check`,
   `nix run .#status` and `nix run .#validate`.
 
@@ -72,8 +72,10 @@ agent-assets validate # every config and registry problem, at once
 ```
 
 `--assets` swaps in a different registry — your own, or a pinned checkout —
-without changing the binary. Everything else defaults from
-[`spec.json`](spec.json); see [the reference](docs/api.md).
+without changing the binary. The directory carries its own
+[`spec.json`](assets/spec.json) declaring its categories; everything else
+defaults from [`defaults.json`](defaults.json); see
+[the reference](docs/api.md).
 
 ## Quick start (Nix)
 
@@ -262,10 +264,11 @@ not resolve, two imports fighting over one output path, an injection aimed at
 a file an asset owns, and an injection target that is unreadable or not JSON.
 A config with four mistakes says all four, not one per run.
 
-`validate` runs that check and also reports registry problems — any asset
-whose `##` sections depart from the schema its category declares in
-[`spec.json`](spec.json). It prints one problem per line, exits 1 if it found
-any, and modifies nothing.
+`validate` runs that check and also reports registry problems — a category
+the registry's [`spec.json`](assets/spec.json) does not declare, an asset in
+the wrong shape for its category, or `##` sections that depart from the
+schema the category declares. It prints one problem per line, exits 1 if it
+found any, and modifies nothing.
 
 ```
 $ agent-assets validate
@@ -287,6 +290,9 @@ twice is two answers, not an error; an asset nobody imports errors, because
 
 ## The registry
 
+The registry's own [`spec.json`](assets/spec.json) declares every category:
+its shape and the sections its assets carry.
+
 | Category | Source | Emitted |
 |---|---|---|
 | `rules/` | `assets/rules/<name>.md` | one Markdown file |
@@ -294,20 +300,22 @@ twice is two answers, not an error; an asset nobody imports errors, because
 | `agents/` | `assets/agents/<name>.md` | one Markdown file |
 
 Sources are provider-neutral: no frontmatter, no agent-specific framing. All
-frontmatter comes from the consumer's config. In a directory asset, one file
-is the entry file (`defaults.skillEntry`) and receives frontmatter; every
-other file is an artifact and is copied verbatim. Each category fixes the
-sections its assets carry — the schemas live in
-[`spec.json`](spec.json) under `headings`.
+frontmatter comes from the consumer's config. Each category declares its
+shape — `kind: "file"` with an `extension`, or `kind: "dir"` with an
+`entryFile` — and in a directory asset that entry file receives frontmatter;
+every other file is an artifact and is copied verbatim. The same declaration
+fixes the sections the category's assets carry.
 
 This registry is compiled into the binary, so `list` and `show` work with
 nothing on disk. `--assets` reads the same layout from a directory instead,
-which is how a consumer brings their own.
+which is how a consumer brings their own — and that directory must carry its
+own `spec.json`.
 
 Adding an asset is a file or a directory in the registry; `agent-assets list`
 sees it and nothing else has to change. Adding a category is a new directory
-in the registry plus the matching config key and section schema: the engine
-infers file-vs-directory from whether the source is `<name>.md` or `<name>/`.
+in the registry plus an entry in its `spec.json` and the matching config key:
+the declaration, not the layout, decides what shape the category's assets
+have.
 
 ## Pinning and updates
 
@@ -360,8 +368,8 @@ commit → tag `vX.Y.Z`**.
 build.rs           # compiles assets/ into the binary
 src/               # the engine: config, registry, render, manifest, plan, apply
 tests/             # the behaviour suite, and registry conformance
-spec.json          # declared defaults and section schemas
-assets/            # the shared registry: rules/, skills/, agents/
+defaults.json      # the declared defaults
+assets/            # the shared registry: spec.json, rules/, skills/, agents/
 docs/              # reference and examples
 flake.nix          # packages, apps, checks, flakeModules.default
 flake-module.nix   # the consumer-facing module

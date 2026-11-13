@@ -8,8 +8,12 @@
 
   outputs = { self, nixpkgs, crane, ... }:
     let
-      # One declaration for every default and label; see spec.json.
-      spec = builtins.fromJSON (builtins.readFile ./spec.json);
+      # One declaration for every default; see defaults.json. The package
+      # identity — name and description — comes from Cargo.toml, which the
+      # release process already treats as its authority, so no value is
+      # declared twice.
+      defaults = builtins.fromJSON (builtins.readFile ./defaults.json);
+      cargoToml = builtins.fromTOML (builtins.readFile ./Cargo.toml);
       supportedSystems = [ "x86_64-linux" "aarch64-linux" "aarch64-darwin" "x86_64-darwin" ];
       forAllSystems = nixpkgs.lib.genAttrs supportedSystems;
     in
@@ -21,14 +25,16 @@
         let
           pkgs = nixpkgs.legacyPackages.${system};
           craneLib = crane.mkLib pkgs;
-          # `spec.json` is include_str!'d, `assets/` is walked by build.rs and
-          # read again by the registry tests, and Cargo.toml names README.md.
-          # crane's default filter keeps only Cargo and Rust files, so all
-          # three are named here. Everything else — docs, CI, this flake — is
-          # excluded, so editing it does not rebuild the engine.
+          # `defaults.json` and `assets/spec.json` are include_str!'d —
+          # build.rs reads the latter to know what to embed — `assets/` is
+          # walked by build.rs and read again by the registry tests, and
+          # Cargo.toml names README.md. crane's default filter keeps only
+          # Cargo and Rust files, so those are named here. Everything else —
+          # docs, CI, this flake — is excluded, so editing it does not
+          # rebuild the engine.
           srcFilter = path: type:
             (craneLib.filterCargoSources path type)
-            || (builtins.match ".*/spec\\.json$" path != null)
+            || (builtins.match ".*/defaults\\.json$" path != null)
             || (builtins.match ".*/assets(/.*)?$" path != null)
             || (builtins.match ".*/README\\.md$" path != null);
         in
@@ -45,7 +51,7 @@
               name = "source";
             };
             meta = {
-              description = spec.name;
+              description = cargoToml.package.description;
             };
           };
         });
@@ -58,8 +64,8 @@
           # sync`. The engine itself has no runtime tools.
           app = name: {
             type = "app";
-            program = "${pkgs.writeShellScript "${spec.name}-${name}" ''
-              exec ${package}/bin/${spec.name} ${name} "$@"
+            program = "${pkgs.writeShellScript "${cargoToml.package.name}-${name}" ''
+              exec ${package}/bin/${cargoToml.package.name} ${name} "$@"
             ''}";
           };
         in

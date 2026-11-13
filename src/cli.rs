@@ -1,19 +1,20 @@
 //! Command-line interface.
 //!
 //! Flag *defaults* are never spelled out here: where a default comes from
-//! `spec.json` the help refers to the key (`defaults.config`, …) instead of
-//! restating its value.
+//! `defaults.json` the help refers to the key (`defaults.config`, …) instead
+//! of restating its value.
 
 use std::env;
 use std::path::{Path, PathBuf};
 
 use clap::{Args, Parser, Subcommand, ValueEnum};
 
-use crate::spec::Spec;
+use crate::defaults::Defaults;
 
+// No `name`: clap derives it from the package name in Cargo.toml, so the
+// binary cannot drift from the declaration.
 #[derive(Debug, Parser)]
 #[command(
-    name = "agent-assets",
     version,
     about = "Render, sync, check and validate shared agent assets",
     long_about = "Render, sync, check and validate shared agent assets.\n\n\
@@ -112,8 +113,9 @@ impl Cli {
 /// `--project` wins. Otherwise, if the user pointed `--config` at a file, the
 /// project is the directory holding it. Otherwise walk up from the current
 /// directory looking for the declared config basename (as git does), and fall
-/// back to the current directory when nothing is found.
-pub fn resolve_project_root(args: &Cli, spec: &Spec) -> Result<PathBuf, String> {
+/// back to [`default_root`] — the declared `defaults.project` — when nothing
+/// is found.
+pub fn resolve_project_root(args: &Cli, defaults: &Defaults) -> Result<PathBuf, String> {
     if let Some(project) = &args.common.project {
         return Ok(project.clone());
     }
@@ -126,7 +128,7 @@ pub fn resolve_project_root(args: &Cli, spec: &Spec) -> Result<PathBuf, String> 
         return current_dir();
     }
 
-    let basename = config_basename(spec)?;
+    let basename = config_basename(defaults)?;
     let cwd = current_dir()?;
     let mut dir = cwd.clone();
     loop {
@@ -135,26 +137,39 @@ pub fn resolve_project_root(args: &Cli, spec: &Spec) -> Result<PathBuf, String> 
         }
         match dir.parent() {
             Some(parent) => dir = parent.to_path_buf(),
-            None => return Ok(cwd),
+            None => return Ok(default_root(&cwd, defaults)),
         }
     }
 }
 
+/// The declared fallback root (`defaults.project`) under `cwd`: what the
+/// project root is when neither a flag nor a discovered config says
+/// otherwise. `.` is the current directory; any other value sits beneath it.
+fn default_root(cwd: &Path, defaults: &Defaults) -> PathBuf {
+    // Components normalise the trailing `.` away, so a `.` default yields
+    // the directory itself rather than `/path/.`.
+    cwd.join(&defaults.project).components().collect()
+}
+
 /// The config file to read: `--config`, or the declared default under the
 /// project root.
-pub fn resolve_config_path(args: &Cli, spec: &Spec, project: &Path) -> Result<PathBuf, String> {
+pub fn resolve_config_path(
+    args: &Cli,
+    defaults: &Defaults,
+    project: &Path,
+) -> Result<PathBuf, String> {
     if let Some(config) = &args.common.config {
         return Ok(config.clone());
     }
-    Ok(project.join(config_basename(spec)?))
+    Ok(project.join(config_basename(defaults)?))
 }
 
 /// The file name the project's config is expected to carry.
-pub fn config_basename(spec: &Spec) -> Result<PathBuf, String> {
-    Path::new(&spec.defaults.config)
+pub fn config_basename(defaults: &Defaults) -> Result<PathBuf, String> {
+    Path::new(&defaults.config)
         .file_name()
         .map(PathBuf::from)
-        .ok_or_else(|| format!("defaults.config has no file name: {}", spec.defaults.config))
+        .ok_or_else(|| format!("defaults.config has no file name: {}", defaults.config))
 }
 
 /// Split a `show` target into its category and its name.
@@ -251,7 +266,7 @@ mod tests {
             "/elsewhere/c.json",
         ]);
         assert_eq!(
-            resolve_project_root(&cli, &Spec::parse().unwrap()).unwrap(),
+            resolve_project_root(&cli, &Defaults::parse().unwrap()).unwrap(),
             PathBuf::from("/tmp/p")
         );
     }
@@ -260,7 +275,7 @@ mod tests {
     fn config_parent_becomes_the_project_root() {
         let cli = parse(&["check", "--config", "/tmp/elsewhere/c.json"]);
         assert_eq!(
-            resolve_project_root(&cli, &Spec::parse().unwrap()).unwrap(),
+            resolve_project_root(&cli, &Defaults::parse().unwrap()).unwrap(),
             PathBuf::from("/tmp/elsewhere")
         );
     }
@@ -268,17 +283,17 @@ mod tests {
     #[test]
     fn bare_config_falls_back_to_the_current_directory() {
         let cli = parse(&["check", "--config", "c.json"]);
-        let root = resolve_project_root(&cli, &Spec::parse().unwrap()).unwrap();
+        let root = resolve_project_root(&cli, &Defaults::parse().unwrap()).unwrap();
         assert_eq!(root, env::current_dir().unwrap());
     }
 
     #[test]
     fn default_config_is_the_declared_one_under_the_project_root() {
         let cli = parse(&["check", "--project", "/tmp/p"]);
-        let spec = Spec::parse().unwrap();
-        let expected = Path::new("/tmp/p").join(config_basename(&spec).unwrap());
+        let defaults = Defaults::parse().unwrap();
+        let expected = Path::new("/tmp/p").join(config_basename(&defaults).unwrap());
         assert_eq!(
-            resolve_config_path(&cli, &spec, Path::new("/tmp/p")).unwrap(),
+            resolve_config_path(&cli, &defaults, Path::new("/tmp/p")).unwrap(),
             expected
         );
     }
@@ -292,9 +307,9 @@ mod tests {
             "--config",
             "/elsewhere/c.json",
         ]);
-        let spec = Spec::parse().unwrap();
+        let defaults = Defaults::parse().unwrap();
         assert_eq!(
-            resolve_config_path(&cli, &spec, Path::new("/tmp/p")).unwrap(),
+            resolve_config_path(&cli, &defaults, Path::new("/tmp/p")).unwrap(),
             PathBuf::from("/elsewhere/c.json")
         );
     }
@@ -303,8 +318,27 @@ mod tests {
     fn a_bare_config_name_resolves_under_the_current_directory() {
         let cli = parse(&["check", "--config", "c.json"]);
         assert_eq!(
-            resolve_project_root(&cli, &Spec::parse().unwrap()).unwrap(),
+            resolve_project_root(&cli, &Defaults::parse().unwrap()).unwrap(),
             env::current_dir().unwrap()
+        );
+    }
+
+    #[test]
+    fn the_default_root_is_the_declared_project_under_the_cwd() {
+        let mut defaults = Defaults::parse().unwrap();
+        defaults.project = "work/tree".to_string();
+        assert_eq!(
+            default_root(Path::new("/somewhere"), &defaults),
+            PathBuf::from("/somewhere/work/tree")
+        );
+    }
+
+    #[test]
+    fn a_dot_default_root_is_the_cwd_itself_not_a_trailing_dot() {
+        let defaults = Defaults::parse().unwrap();
+        assert_eq!(
+            default_root(Path::new("/somewhere"), &defaults),
+            PathBuf::from("/somewhere")
         );
     }
 }

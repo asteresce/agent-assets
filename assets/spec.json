@@ -1,15 +1,8 @@
 {
-  "name": "agent-assets",
-  "defaults": {
-    "assets": "assets",
-    "config": "./agent-assets.json",
-    "manifest": "./agent-assets.lock",
-    "project": ".",
-    "rootPrefix": "./.agent-assets/",
-    "skillEntry": "SKILL.md"
-  },
-  "headings": {
-    "rules": [
+  "rules": {
+    "kind": "file",
+    "extension": "md",
+    "headings": [
       { "name": "Summary", "required": true },
       { "name": "Scope" },
       { "name": "Guidelines", "required": true },
@@ -17,8 +10,12 @@
       { "name": "Examples" },
       { "name": "Rationale" },
       { "name": "References" }
-    ],
-    "skills": [
+    ]
+  },
+  "skills": {
+    "kind": "dir",
+    "entryFile": "SKILL.md",
+    "headings": [
       { "name": "Description", "required": true },
       { "name": "When to Use" },
       { "name": "Prerequisites" },
@@ -30,8 +27,12 @@
       { "name": "Examples" },
       { "name": "Bundled Files" },
       { "name": "References" }
-    ],
-    "agents": [
+    ]
+  },
+  "agents": {
+    "kind": "file",
+    "extension": "md",
+    "headings": [
       { "name": "Role", "required": true },
       { "name": "When to Use" },
       { "name": "Inputs" },

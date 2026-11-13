@@ -1,20 +1,22 @@
-//! Registry conformance: the shipped assets follow the section schema in
-//! `spec.json`.
+//! Registry conformance: the shipped assets follow the declaration in
+//! `assets/spec.json`.
 //!
 //! The linter itself lives in [`agent_assets::sections`]; this file is its
 //! executable specification plus the repo-side checks around it — the
 //! "adding an asset" rules in `AGENTS.md`. A consumer's `check` deliberately
 //! does not validate headings; that is the registry's job.
 //!
-//! The schema for a category is an ordered list of `{name, required}` entries.
-//! An asset conforms when its `##` sections are a subsequence of that list, in
-//! that order, with every required entry present. Fenced code blocks are
-//! opaque, so an example may contain headings of its own.
+//! The declaration gives each category its shape — `kind`, plus `extension`
+//! for a file category or `entryFile` for a directory one — and its section
+//! schema: an ordered list of `{name, required}` entries. An asset conforms
+//! when its `##` sections are a subsequence of that list, in that order,
+//! with every required entry present. Fenced code blocks are opaque, so an
+//! example may contain headings of its own.
 
 use std::path::{Path, PathBuf};
 
 use agent_assets::sections;
-use agent_assets::spec::{Heading, Spec};
+use agent_assets::spec::{AssetKind, AssetSpec, AssetSpecs, Heading};
 
 const REPO: &str = env!("CARGO_MANIFEST_DIR");
 
@@ -33,21 +35,39 @@ fn valid_section_name(name: &str) -> bool {
         && name.chars().all(|c| c.is_ascii_alphabetic() || c == ' ')
 }
 
-/// Every importable asset of a category: files, or a directory's entry file.
-/// Catalog indexes (`README.md`) are not assets, and artifacts inside a
-/// directory asset are free-form.
-fn assets(assets_dir: &str, skill_entry: &str, category: &str) -> Vec<PathBuf> {
-    let root = Path::new(REPO).join(assets_dir).join(category);
+/// The shipped declaration, read the way a registry directory reads its own.
+fn specs() -> AssetSpecs {
+    let path = Path::new(REPO).join("assets/spec.json");
+    let text = std::fs::read_to_string(&path).unwrap();
+    AssetSpecs::parse(&text, "assets/spec.json").unwrap()
+}
+
+/// The name a category reserves for its catalog index, which is documentation
+/// about the category rather than an asset. Same call as `registry.rs`.
+fn is_catalog_index(name: &str) -> bool {
+    name == "README" || name == "README.md"
+}
+
+/// Every importable asset of a category, as the entry file whose sections
+/// are the schema's business. Catalog indexes are not assets, and artifacts
+/// inside a directory asset are free-form.
+fn assets(spec: &AssetSpec, category: &str) -> Vec<PathBuf> {
+    let root = Path::new(REPO).join("assets").join(category);
     let mut out = Vec::new();
     for entry in
         std::fs::read_dir(&root).unwrap_or_else(|e| panic!("cannot read {}: {e}", root.display()))
     {
         let entry = entry.unwrap();
         let path = entry.path();
-        if path.is_dir() {
-            out.push(path.join(skill_entry));
-        } else if entry.file_name() != "README.md" {
-            out.push(path);
+        if is_catalog_index(&entry.file_name().to_string_lossy()) {
+            continue;
+        }
+        match spec.kind {
+            AssetKind::File => out.push(path),
+            AssetKind::Dir => {
+                let entry_file = spec.entry_file.as_deref().expect("declaration");
+                out.push(path.join(entry_file));
+            }
         }
     }
     out.sort();
@@ -58,24 +78,24 @@ fn assets(assets_dir: &str, skill_entry: &str, category: &str) -> Vec<PathBuf> {
 
 #[test]
 fn every_schema_category_exists_in_the_registry() {
-    let spec = Spec::parse().unwrap();
-    for category in spec.headings.keys() {
-        let dir = Path::new(REPO).join(&spec.defaults.assets).join(category);
+    let specs = specs();
+    for (category, _) in specs.iter() {
+        let dir = Path::new(REPO).join("assets").join(category);
         assert!(dir.is_dir(), "{category}: missing registry directory");
     }
 }
 
 #[test]
 fn every_registry_category_has_a_schema() {
-    let spec = Spec::parse().unwrap();
-    let root = Path::new(REPO).join(&spec.defaults.assets);
+    let specs = specs();
+    let root = Path::new(REPO).join("assets");
     for entry in std::fs::read_dir(&root).unwrap() {
         let entry = entry.unwrap();
         if entry.path().is_dir() {
             let name = entry.file_name().to_string_lossy().into_owned();
             assert!(
-                spec.headings.contains_key(&name),
-                "{name} has no section schema in spec.json"
+                specs.get(&name).is_some(),
+                "{name} has no declaration in assets/spec.json"
             );
         }
     }
@@ -83,10 +103,14 @@ fn every_registry_category_has_a_schema() {
 
 #[test]
 fn schema_entries_are_well_formed() {
-    let spec = Spec::parse().unwrap();
-    for (category, schema) in &spec.headings {
+    // Shape invariants (`entryFile` iff `dir`, `extension` iff `file`, a
+    // first section that is required) are `AssetSpecs::parse`'s to enforce —
+    // `specs()` would have failed. What stays here is the naming rule the
+    // linter's callers rely on.
+    let specs = specs();
+    for (category, spec) in specs.iter() {
         let mut names = std::collections::BTreeSet::new();
-        for entry in schema {
+        for entry in &spec.headings {
             assert!(
                 names.insert(entry.name.as_str()),
                 "{category}: duplicate section name {:?}",
@@ -98,20 +122,62 @@ fn schema_entries_are_well_formed() {
                 entry.name
             );
         }
-        assert!(
-            schema[0].required,
-            "{category}: the first section must be required"
-        );
     }
+}
+
+#[test]
+fn the_declaration_on_disk_matches_the_embedded_one() {
+    // Guards against shipping a binary built from a stale declaration.
+    assert_eq!(specs(), AssetSpecs::embedded().unwrap());
 }
 
 // ---------------------------------------------------------- the registry
 
 #[test]
+fn every_asset_matches_its_declared_shape() {
+    let specs = specs();
+    for (category, spec) in specs.iter() {
+        let root = Path::new(REPO).join("assets").join(category);
+        for entry in std::fs::read_dir(&root).unwrap() {
+            let entry = entry.unwrap();
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if is_catalog_index(&name) {
+                continue;
+            }
+            let path = entry.path();
+            match spec.kind {
+                AssetKind::File => {
+                    let extension = spec.extension.as_deref().expect("declaration");
+                    assert!(
+                        path.is_file(),
+                        "{category}/{name}: a file category holds .{extension} files"
+                    );
+                    assert!(
+                        name.ends_with(&format!(".{extension}")),
+                        "{category}/{name}: not a .{extension} file"
+                    );
+                }
+                AssetKind::Dir => {
+                    assert!(
+                        path.is_dir(),
+                        "{category}/{name}: a directory category holds directories"
+                    );
+                    let entry_file = spec.entry_file.as_deref().expect("declaration");
+                    assert!(
+                        path.join(entry_file).is_file(),
+                        "{category}/{name}: missing entry file {entry_file}"
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
 fn every_shipped_asset_matches_the_section_schema() {
-    let spec = Spec::parse().unwrap();
-    for (category, schema) in &spec.headings {
-        for asset in assets(&spec.defaults.assets, &spec.defaults.skill_entry, category) {
+    let specs = specs();
+    for (category, spec) in specs.iter() {
+        for asset in assets(spec, category) {
             assert!(
                 asset.is_file(),
                 "{category}: missing entry file {}",
@@ -119,7 +185,7 @@ fn every_shipped_asset_matches_the_section_schema() {
             );
             let text = std::fs::read_to_string(&asset).unwrap();
             assert_eq!(
-                sections::problems(&text, schema),
+                sections::problems(&text, &spec.headings),
                 Vec::<String>::new(),
                 "{}: {}",
                 category,

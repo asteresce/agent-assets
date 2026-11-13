@@ -3,9 +3,10 @@
 //! The crate is a library plus a thin binary, so the tests drive the same
 //! types the binary uses. Reading order:
 //!
-//! * [`spec`] — the declared values, from `spec.json`.
+//! * [`defaults`] — the package declaration, from `defaults.json`.
 //! * [`config`] — the consumer's JSON document.
 //! * [`registry`] — where the shared assets live.
+//! * [`spec`] — the registry's declaration, from its own `spec.json`.
 //! * [`sections`] — the `##` sections of a Markdown asset, read through code
 //!   fences.
 //! * [`render`] and [`yaml_emit`] — one asset plus its injections, as bytes.
@@ -21,6 +22,7 @@ pub mod apply;
 pub mod check;
 pub mod cli;
 pub mod config;
+pub mod defaults;
 pub mod files;
 pub mod manifest;
 pub mod merge;

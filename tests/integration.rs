@@ -322,7 +322,7 @@ fn no_frontmatter_block_is_emitted_when_none_is_configured() {
 }
 
 #[test]
-fn only_a_skill_entry_file_gets_frontmatter() {
+fn only_an_entry_file_gets_frontmatter() {
     let world = World::fixture();
     let mut config = base_config();
     config["skills"]["injections"] = json!({"frontmatter": {"scope": "skills"}});
@@ -682,6 +682,19 @@ fn an_unknown_asset_is_an_error() {
     let world = World::fixture();
     world.write_config(&json!({"rules": {"root": "./r", "imports": ["nope"]}}));
     world.sync().fails().stderr_contains("asset not found");
+}
+
+/// An asset directory carries its own `spec.json` — without it there are no
+/// categories, shapes or schemas to run on, so nothing may be loaded.
+#[test]
+fn a_registry_without_a_spec_json_is_refused() {
+    let world = World::new();
+    std::fs::remove_file(world.registry.join("spec.json")).unwrap();
+
+    world
+        .run(&["list"])
+        .fails()
+        .stderr_contains("has no spec.json");
 }
 
 #[test]
@@ -1375,6 +1388,24 @@ fn validate_reports_a_registry_asset_that_breaks_its_sections() {
     assert!(run.stdout.contains("rules/broken"), "{}", run.stdout);
     assert!(
         run.stdout.contains("missing required section 'Guidelines'"),
+        "{}",
+        run.stdout
+    );
+}
+
+/// The declaration decides the shape, not the layout: a file in a directory
+/// category is not an asset — `list` and `sync` skip it, `validate` says so.
+#[test]
+fn validate_reports_an_entry_in_the_wrong_shape() {
+    let world = World::fixture();
+    conform(&world);
+    world.write_asset("skills/loose.md", "not a skill directory\n");
+
+    let run = world.run(&["validate"]);
+    run.fails();
+    assert!(run.stdout.contains("skills/loose.md"), "{}", run.stdout);
+    assert!(
+        run.stdout.contains("declares directory assets"),
         "{}",
         run.stdout
     );

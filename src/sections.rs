@@ -6,8 +6,9 @@
 //! implementation rather than one per call site.
 //!
 //! The schema for a category is an ordered list of `{name, required}` entries
-//! from `spec.json`. An asset conforms when its `##` sections are a
-//! subsequence of that list, in that order, with every required entry present.
+//! from the registry's `spec.json`. An asset conforms when its `##` sections
+//! are a subsequence of that list, in that order, with every required entry
+//! present.
 
 use crate::spec::Heading;
 

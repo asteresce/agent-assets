@@ -6,17 +6,18 @@
 //!
 //! - [`config_problems`] — will a run be well-defined? Every command that
 //!   touches the project refuses on these first.
-//! - [`registry_problems`] — does each asset follow the section schema its
-//!   category declares? Reported, never a block: a malformed asset is a
-//!   quality problem in the registry, not in this project's config.
+//! - [`registry_problems`] — does the registry match the declaration its
+//!   `spec.json` makes, and does each asset follow its category's section
+//!   schema? Reported, never a block: a malformed registry is a quality
+//!   problem in the source, not in this project's config.
 
 use std::path::Path;
 
 use crate::config::Config;
+use crate::defaults::Defaults;
 use crate::plan;
-use crate::registry::Registry;
+use crate::registry::{AssetKind, Registry};
 use crate::sections;
-use crate::spec::Spec;
 
 /// Everything that would make a run undefined: imports that do not resolve,
 /// two imports fighting over a path, injections aimed at a file an asset
@@ -25,10 +26,10 @@ use crate::spec::Spec;
 pub fn config_problems(
     config: &Config,
     registry: &Registry,
-    spec: &Spec,
+    defaults: &Defaults,
     project_root: &Path,
 ) -> Vec<String> {
-    let mut problems = plan::resolve(config, registry, spec)
+    let mut problems = plan::resolve(config, registry, defaults)
         .err()
         .unwrap_or_default();
     // A target that is not JSON would stop the run later, and the config is
@@ -39,28 +40,74 @@ pub fn config_problems(
     problems
 }
 
-/// Every asset in the registry that does not follow its category's declared
-/// section schema, as `category/name: problem`.
-pub fn registry_problems(registry: &Registry, spec: &Spec) -> Vec<String> {
-    let entries = match registry.list() {
-        Ok(entries) => entries,
+/// Everything in the registry that departs from its own `spec.json`: an
+/// undeclared category, a shape the category does not declare, an asset
+/// without its entry file, or `##` sections that depart from the schema.
+/// Empty when the registry conforms.
+pub fn registry_problems(registry: &Registry) -> Vec<String> {
+    let found = match registry.inventory() {
+        Ok(found) => found,
         Err(e) => return vec![e],
     };
+    let specs = registry.specs();
     let mut problems = Vec::new();
-    for entry in entries {
-        let asset = match registry.load(entry.category.as_str(), entry.name.as_str()) {
-            Ok(asset) => asset,
-            Err(e) => {
-                problems.push(e);
+    for entry in found {
+        let Some(decl) = specs.get(&entry.category) else {
+            problems.push(format!(
+                "{}/{}: category is not declared in the registry's spec.json",
+                entry.category, entry.child
+            ));
+            continue;
+        };
+        // The declaration decides what an asset is; anything else in the
+        // category is a problem in the registry, not an asset to lint.
+        let name = match (decl.kind, entry.shape) {
+            (AssetKind::File, AssetKind::File) => {
+                let extension = decl.extension.as_deref().unwrap_or("");
+                let stem = (!extension.is_empty())
+                    .then(|| entry.child.strip_suffix(&format!(".{extension}")))
+                    .flatten();
+                let Some(stem) = stem else {
+                    problems.push(format!(
+                        "{}/{}: not a .{extension} file, though {category} declares file assets",
+                        entry.category,
+                        entry.child,
+                        category = entry.category
+                    ));
+                    continue;
+                };
+                stem.to_string()
+            }
+            (AssetKind::Dir, AssetKind::Dir) => entry.child.clone(),
+            (AssetKind::File, AssetKind::Dir) => {
+                problems.push(format!(
+                    "{}/{}: a directory, but {category} declares file assets (.{extension})",
+                    entry.category,
+                    entry.child,
+                    category = entry.category,
+                    extension = decl.extension.as_deref().unwrap_or("")
+                ));
+                continue;
+            }
+            (AssetKind::Dir, AssetKind::File) => {
+                problems.push(format!(
+                    "{}/{}: a file, but {category} declares directory assets (entry {entry_file})",
+                    entry.category,
+                    entry.child,
+                    category = entry.category,
+                    entry_file = decl.entry_file.as_deref().unwrap_or("")
+                ));
                 continue;
             }
         };
-        let Some(schema) = spec.headings.get(entry.category.as_str()) else {
-            continue;
-        };
-        let text = String::from_utf8_lossy(asset.entry_bytes());
-        for problem in sections::problems(&text, schema) {
-            problems.push(format!("{}/{}: {problem}", entry.category, entry.name));
+        match registry.load(&entry.category, &name) {
+            Ok(asset) => {
+                let text = String::from_utf8_lossy(asset.entry_bytes());
+                for problem in sections::problems(&text, &decl.headings) {
+                    problems.push(format!("{}/{}: {problem}", entry.category, name));
+                }
+            }
+            Err(e) => problems.push(e),
         }
     }
     problems
@@ -70,11 +117,11 @@ pub fn registry_problems(registry: &Registry, spec: &Spec) -> Vec<String> {
 pub fn validate(
     config: &Config,
     registry: &Registry,
-    spec: &Spec,
+    defaults: &Defaults,
     project_root: &Path,
 ) -> Vec<String> {
-    let mut problems = config_problems(config, registry, spec, project_root);
-    problems.extend(registry_problems(registry, spec));
+    let mut problems = config_problems(config, registry, defaults, project_root);
+    problems.extend(registry_problems(registry));
     problems
 }
 
@@ -88,10 +135,15 @@ mod tests {
     const RULE: &str = "## Summary\n\nKeep secrets safe.\n\n## Guidelines\n\n- A.\n";
 
     /// A throwaway registry: one conforming rule, one that is not.
-    fn fixture() -> (TempDir, Registry, Spec) {
+    fn fixture() -> (TempDir, Registry, Defaults) {
         let tmp = TempDir::new().unwrap();
         let assets = tmp.path().join("assets");
         fs::create_dir_all(assets.join("rules")).unwrap();
+        fs::write(
+            assets.join("spec.json"),
+            include_str!("../assets/spec.json"),
+        )
+        .unwrap();
         fs::write(assets.join("rules/security.md"), RULE).unwrap();
         fs::write(
             assets.join("rules/broken.md"),
@@ -99,9 +151,9 @@ mod tests {
         )
         .unwrap();
 
-        let spec = Spec::parse().expect("repo spec parses");
-        let registry = Registry::with_defaults(&assets, &spec);
-        (tmp, registry, spec)
+        let defaults = Defaults::parse().expect("repo defaults parse");
+        let registry = Registry::new(&assets).unwrap();
+        (tmp, registry, defaults)
     }
 
     fn config_from(json: &str) -> Config {
@@ -110,31 +162,31 @@ mod tests {
 
     #[test]
     fn a_sound_config_has_no_problems() {
-        let (tmp, registry, spec) = fixture();
+        let (tmp, registry, defaults) = fixture();
         let config = config_from(r#"{"rules": {"imports": ["security"]}}"#);
 
         assert_eq!(
-            config_problems(&config, &registry, &spec, tmp.path()),
+            config_problems(&config, &registry, &defaults, tmp.path()),
             Vec::<String>::new()
         );
     }
 
     #[test]
     fn an_empty_config_is_sound() {
-        let (tmp, registry, spec) = fixture();
+        let (tmp, registry, defaults) = fixture();
 
         assert_eq!(
-            config_problems(&config_from("{}"), &registry, &spec, tmp.path()),
+            config_problems(&config_from("{}"), &registry, &defaults, tmp.path()),
             Vec::<String>::new()
         );
     }
 
     #[test]
     fn an_unresolvable_import_is_reported_not_raised() {
-        let (tmp, registry, spec) = fixture();
+        let (tmp, registry, defaults) = fixture();
         let config = config_from(r#"{"rules": {"imports": ["no-such-asset"]}}"#);
 
-        let problems = config_problems(&config, &registry, &spec, tmp.path());
+        let problems = config_problems(&config, &registry, &defaults, tmp.path());
         assert_eq!(problems.len(), 1, "{problems:?}");
         assert!(
             problems[0].contains("no-such-asset"),
@@ -145,10 +197,10 @@ mod tests {
 
     #[test]
     fn several_mistakes_are_all_reported_at_once() {
-        let (tmp, registry, spec) = fixture();
+        let (tmp, registry, defaults) = fixture();
         let config = config_from(r#"{"rules": {"imports": ["missing-one", "missing-two"]}}"#);
 
-        let problems = config_problems(&config, &registry, &spec, tmp.path());
+        let problems = config_problems(&config, &registry, &defaults, tmp.path());
         assert_eq!(problems.len(), 2, "{problems:?}");
         assert!(problems[0].contains("missing-one"), "{problems:?}");
         assert!(problems[1].contains("missing-two"), "{problems:?}");
@@ -156,7 +208,7 @@ mod tests {
 
     #[test]
     fn an_injection_targeting_an_asset_is_a_config_problem() {
-        let (tmp, registry, spec) = fixture();
+        let (tmp, registry, defaults) = fixture();
         let config = config_from(
             r#"{
                 "rules": {
@@ -169,7 +221,7 @@ mod tests {
             }"#,
         );
 
-        let problems = config_problems(&config, &registry, &spec, tmp.path());
+        let problems = config_problems(&config, &registry, &defaults, tmp.path());
         assert_eq!(problems.len(), 1, "{problems:?}");
         assert!(
             problems[0].contains("collides with the asset"),
@@ -182,7 +234,7 @@ mod tests {
     /// and that is still a reason the run would stop.
     #[test]
     fn an_injection_target_that_is_not_json_is_a_config_problem() {
-        let (tmp, registry, spec) = fixture();
+        let (tmp, registry, defaults) = fixture();
         fs::write(tmp.path().join("opencode.json"), "not json").unwrap();
         let config = config_from(
             r#"{
@@ -196,7 +248,7 @@ mod tests {
             }"#,
         );
 
-        let problems = config_problems(&config, &registry, &spec, tmp.path());
+        let problems = config_problems(&config, &registry, &defaults, tmp.path());
         assert_eq!(problems.len(), 1, "{problems:?}");
         assert!(
             problems[0].contains("is not valid JSON"),
@@ -207,10 +259,10 @@ mod tests {
 
     #[test]
     fn a_conformant_registry_says_nothing() {
-        let (_tmp, registry, spec) = fixture();
+        let (_tmp, registry, _spec) = fixture();
 
         // `broken.md` is deliberately bad, so only `security` is conformant.
-        let problems = registry_problems(&registry, &spec);
+        let problems = registry_problems(&registry);
         assert_eq!(problems.len(), 1, "{problems:?}");
         assert!(
             problems[0].starts_with("rules/broken: "),
@@ -225,23 +277,51 @@ mod tests {
     }
 
     #[test]
+    fn an_undeclared_category_is_a_registry_problem() {
+        let (tmp, registry, _spec) = fixture();
+        fs::create_dir_all(tmp.path().join("assets/commands")).unwrap();
+        fs::write(tmp.path().join("assets/commands/ci.md"), "## Summary\nA\n").unwrap();
+
+        let problems = registry_problems(&registry);
+        assert!(
+            problems
+                .iter()
+                .any(|p| p.contains("category is not declared")),
+            "{problems:?}"
+        );
+    }
+
+    #[test]
+    fn a_wrong_shape_entry_is_a_registry_problem() {
+        let (tmp, registry, _spec) = fixture();
+        fs::create_dir_all(tmp.path().join("assets/rules/box")).unwrap();
+
+        let problems = registry_problems(&registry);
+        assert!(
+            problems
+                .iter()
+                .any(|p| p.contains("a directory, but rules declares file assets")),
+            "{problems:?}"
+        );
+    }
+
+    #[test]
     fn the_shipped_registry_conforms_to_its_own_spec() {
-        let spec = Spec::parse().expect("repo spec parses");
-        let registry = Registry::embedded_with_defaults(&spec);
+        let registry = Registry::embedded().unwrap();
 
         assert_eq!(
-            registry_problems(&registry, &spec),
+            registry_problems(&registry),
             Vec::<String>::new(),
-            "every asset must follow the section schema its category declares"
+            "every asset must follow the declaration its registry's spec.json makes"
         );
     }
 
     #[test]
     fn validate_reports_both_kinds_of_problem() {
-        let (tmp, registry, spec) = fixture();
+        let (tmp, registry, defaults) = fixture();
         let config = config_from(r#"{"rules": {"imports": ["missing-thing"]}}"#);
 
-        let problems = validate(&config, &registry, &spec, tmp.path());
+        let problems = validate(&config, &registry, &defaults, tmp.path());
         assert_eq!(problems.len(), 2, "{problems:?}");
         assert!(problems[0].contains("missing-thing"), "{problems:?}");
         assert!(problems[1].starts_with("rules/broken: "), "{problems:?}");
