@@ -24,7 +24,7 @@ Get the binary. From the
 `SHA256SUMS`, and put `agent-assets` on your `PATH`:
 
 ```bash
-version=0.1.3 target=x86_64-unknown-linux-musl
+version=0.2.0 target=x86_64-unknown-linux-musl
 base=https://github.com/asteresce/agent-assets/releases/download/v$version
 curl -fsSLO "$base/agent-assets-$version-$target.tar.gz"
 curl -fsSLO "$base/SHA256SUMS"
@@ -42,7 +42,7 @@ mise use -y github:asteresce/agent-assets
 ```
 
 `mise` hides releases younger than a day by default; pin the version
-(`github:asteresce/agent-assets@0.1.3`) or lower `minimum_release_age` when you
+(`github:asteresce/agent-assets@0.2.0`) or lower `minimum_release_age` when you
 want one the moment it ships.
 
 If your system is configured declaratively — NixOS, home-manager — install it
